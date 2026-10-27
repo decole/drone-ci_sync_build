@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+    <!-- Header -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight">Руководство и инструкция</h1>
+            <p class="text-slate-400 text-sm mt-1">Как работает сервис, настройка .drone.yml, креденшелов и нотификаций</p>
+        </div>
+        <a href="/" class="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 bg-slate-950/60 hover:bg-slate-800 px-3.5 py-2 rounded-lg border border-slate-800 transition">
+            ← К репозиториям
+        </a>
+    </div>
+
+    <!-- Quick Navigation -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <a href="#how-it-works" class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/40 transition group">
+            <div class="font-semibold text-white group-hover:text-cyan-400 text-sm mb-1 flex items-center gap-1.5">
+                <span>⚡</span> Принцип работы
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">Pull-модель опроса, планировщик и вызовы Drone CI REST API</p>
+        </a>
+        <a href="#drone-yml" class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/40 transition group">
+            <div class="font-semibold text-white group-hover:text-cyan-400 text-sm mb-1 flex items-center gap-1.5">
+                <span>⚙️</span> Настройка .drone.yml
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">Параметр custom в trigger.event для авто-опроса и ручных сборок</p>
+        </a>
+        <a href="#setup-guide" class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/40 transition group">
+            <div class="font-semibold text-white group-hover:text-cyan-400 text-sm mb-1 flex items-center gap-1.5">
+                <span>🚀</span> Пошаговая настройка
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">Подключение репозитория, токены и отправка уведомлений</p>
+        </a>
+    </div>
+
+    <!-- Section 1: How It Works -->
+    <section id="how-it-works" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="flex items-center gap-2.5 pb-3 border-b border-slate-800">
+            <span class="text-lg">⚡</span>
+            <h2 class="text-lg font-bold text-white">1. Принцип работы сервиса (Pull-модель и внешний посредник)</h2>
+        </div>
+        <div class="p-3.5 bg-amber-950/40 border border-amber-900/60 rounded-xl text-xs text-amber-200 leading-relaxed flex items-start gap-2.5">
+            <span class="text-base shrink-0">⚠️</span>
+            <div>
+                <strong class="text-amber-100 font-semibold">Почему вебхуки GitHub не доходят:</strong> В России входящие вебхуки от GitHub часто блокируются или недоступны из-за сетевых ограничений, блокировок диапазонов IP-адресов и закрытых корпоративных контуров (NAT/файрволы). В результате стандартная отправка push-вебхуков от GitHub к локальному или арендованному серверу с Drone CI не работает.
+            </div>
+        </div>
+        <p class="text-sm text-slate-300 leading-relaxed">
+            <strong>Drone CI Build Sync</strong> выступает в роли <strong>внешнего посредника и инициатора вебхуков</strong> с pull-моделью: вместо пассивного ожидания входящих запросов от GitHub сервис самостоятельно опрашивает удаленные репозитории и инициирует сборку:
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-xs">
+            <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-1.5">
+                <div class="font-semibold text-cyan-400">1. Быстрый опрос</div>
+                <p class="text-slate-400">Периодически запускает команду <code class="text-slate-300">git ls-remote</code> без тяжелого клонирования репозитория.</p>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-1.5">
+                <div class="font-semibold text-cyan-400">2. Фиксация коммитов</div>
+                <p class="text-slate-400">Сравнивает текущий SHA ветки с ранее сохраненным в базе данных SQLite.</p>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-1.5">
+                <div class="font-semibold text-cyan-400">3. Вызов Drone API</div>
+                <p class="text-slate-400">При обнаружении нового SHA инициирует сборку через официальный Drone REST API.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 2: Drone YML Configuration (CRITICAL) -->
+    <section id="drone-yml" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="flex items-center gap-2.5 pb-3 border-b border-slate-800">
+            <span class="text-lg">⚙️</span>
+            <h2 class="text-lg font-bold text-white">2. Настройка .drone.yml: событие «custom»</h2>
+        </div>
+
+        <div class="p-4 rounded-xl bg-amber-950/30 border border-amber-800/70 text-amber-200 text-xs space-y-2">
+            <div class="font-semibold text-amber-300 flex items-center gap-1.5 text-sm">
+                <span>⚠️</span> Почему это необходимо и для автоматического, и для ручного запуска:
+            </div>
+            <p class="leading-relaxed">
+                Поскольку сервис обращается к Drone CI через <strong>REST API</strong> (<code class="bg-amber-950 px-1.5 py-0.5 rounded font-mono">POST /api/repos/{owner}/{repo}/builds?branch=...</code>), Drone CI по спецификации <strong>всегда</strong> маркирует такие сборки типом события <strong>«custom»</strong>.
+            </p>
+            <p class="leading-relaxed">
+                Это происходит <strong>в обоих случаях</strong>:
+            </p>
+            <ul class="list-disc list-inside space-y-1 pl-1">
+                <li>когда фоновый воркер обнаруживает новый коммит и инициирует запуск сборки;</li>
+                <li>когда вы нажимаете кнопку «🚀 Запустить билд» в карточке репозитория.</li>
+            </ul>
+        </div>
+
+        <p class="text-sm text-slate-300 leading-relaxed">
+            Если в файле <code class="text-cyan-400 font-mono">.drone.yml</code> секция <code class="font-mono text-cyan-400">trigger</code> ограничена только <code class="font-mono text-slate-200">push</code> и <code class="font-mono text-slate-200">pull_request</code>, Drone CI отклонит запуск пайплайна со статусом в логах:
+        </p>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-rose-300">
+            {"event":"custom","level":"info","msg":"trigger: skipping pipeline, does not match event"}
+        </div>
+
+        <h3 class="text-sm font-semibold text-white pt-2">Пример корректной настройки .drone.yml:</h3>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-300 space-y-1">
+            <span class="text-slate-500"># .drone.yml</span><br>
+            <span class="text-indigo-400">kind</span>: pipeline<br>
+            <span class="text-indigo-400">type</span>: docker<br>
+            <span class="text-indigo-400">name</span>: ci-cd<br><br>
+            <span class="text-indigo-400">trigger</span>:<br>
+            &nbsp;&nbsp;<span class="text-indigo-400">event</span>:<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;- <span class="text-emerald-400">push</span><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;- <span class="text-emerald-400">pull_request</span><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;- <span class="text-cyan-300 font-bold">custom</span> <span class="text-slate-500"># ОБЯЗАТЕЛЬНО: для опроса через API и ручных запусков</span>
+        </div>
+
+        <h3 class="text-sm font-semibold text-white pt-2">Как защитить шаги деплоя (Production):</h3>
+        <p class="text-xs text-slate-400 leading-relaxed">
+            Если вы не хотите, чтобы ответственные шаги (например, боевой деплой на production-сервер) запускались при ручном запуске или не-push событиях, ограничьте их индивидуально через <code class="text-slate-300 font-mono">when.event</code> внутри самого шага:
+        </p>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-300 space-y-1">
+            &nbsp;&nbsp;- <span class="text-indigo-400">name</span>: production-deploy<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-indigo-400">image</span>: appleboy/drone-ssh<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span class="text-indigo-400">when</span>:<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-indigo-400">event</span>:<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- <span class="text-emerald-400">push</span> <span class="text-slate-500"># этот шаг сработает только при стандартном push</span><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text-indigo-400">branch</span>:<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- main
+        </div>
+    </section>
+
+    <!-- Section 3: Step-by-Step Setup -->
+    <section id="setup-guide" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-5">
+        <div class="flex items-center gap-2.5 pb-3 border-b border-slate-800">
+            <span class="text-lg">🚀</span>
+            <h2 class="text-lg font-bold text-white">3. Пошаговая настройка репозитория</h2>
+        </div>
+
+        <div class="space-y-4 text-xs text-slate-300">
+            <div class="flex items-start gap-3">
+                <span class="w-6 h-6 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-bold flex items-center justify-center shrink-0 text-xs">1</span>
+                <div>
+                    <strong class="text-white text-sm">Получите персональный токен Drone CI</strong>
+                    <p class="text-slate-400 mt-0.5">В веб-интерфейсе вашего Drone CI нажмите на аватар в правом верхнем углу → <em>User Profile</em> → скопируйте значение из поля <em>Your Personal Token</em>.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+                <span class="w-6 h-6 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-bold flex items-center justify-center shrink-0 text-xs">2</span>
+                <div>
+                    <strong class="text-white text-sm">Сохраните креденшелы в разделе «Креденшелы»</strong>
+                    <p class="text-slate-400 mt-0.5">Добавьте учетные данные в реестр (<a href="/credentials" class="text-cyan-400 underline">/credentials</a>). Токены шифруются алгоритмом Fernet (AES-128-CBC) и могут быть привязаны сразу к нескольким репозиториям.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+                <span class="w-6 h-6 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-bold flex items-center justify-center shrink-0 text-xs">3</span>
+                <div>
+                    <strong class="text-white text-sm">Добавьте репозиторий</strong>
+                    <p class="text-slate-400 mt-0.5">Перейдите в <a href="/repos/new" class="text-cyan-400 underline">«Добавить репозиторий»</a>. Заполните URL Git-репозитория и имя в Drone CI (в формате <code class="text-slate-200">owner/repo</code>). Нажмите <strong>«🧪 Проверить подключение»</strong>, чтобы убедиться в доступности веток и API до сохранения.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+                <span class="w-6 h-6 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-bold flex items-center justify-center shrink-0 text-xs">4</span>
+                <div>
+                    <strong class="text-white text-sm">Настройте интервал опроса и ветки</strong>
+                    <p class="text-slate-400 mt-0.5">Выберите опцию «Отслеживать все ветки» либо перечислите конкретные ветки через запятую. Задайте интервал опроса (по умолчанию 2 минуты).</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 4: Live SSE Logs & Notifications -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="flex items-center gap-2.5 pb-3 border-b border-slate-800">
+            <span class="text-lg">🔔</span>
+            <h2 class="text-lg font-bold text-white">4. Мониторинг, живой журнал и нотификации</h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300">
+            <div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                <div class="font-semibold text-white flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Живой журнал событий (SSE)
+                </div>
+                <p class="text-slate-400 leading-relaxed">
+                    На странице <a href="/logs" class="text-cyan-400 underline">/logs</a> и в деталях репозиториев таблица обновляется моментально по протоколу Server-Sent Events без перезагрузки вкладки.
+                </p>
+            </div>
+
+            <div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                <div class="font-semibold text-white flex items-center gap-1.5">
+                    <span>💬</span>
+                    Telegram, ВКонтакте и Email
+                </div>
+                <p class="text-slate-400 leading-relaxed">
+                    В разделе <a href="/notifications" class="text-cyan-400 underline">/notifications</a> вы можете настроить мгновенную отправку отчётов о запущенных сборках и ошибках опроса.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 5: Worker Schedule -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="flex items-center gap-2.5 pb-3 border-b border-slate-800">
+            <span class="text-lg">⏰</span>
+            <h2 class="text-lg font-bold text-white">5. Расписание работы воркера по дням недели</h2>
+        </div>
+        <div class="text-xs text-slate-300 space-y-3 leading-relaxed">
+            <p>
+                Сервис позволяет задавать временные интервалы (со скольки до скольки) для каждого дня недели, чтобы фоновый воркер искал новые коммиты только в рабочее время и не нагружал внешние Git-серверы и Drone CI во внерабочие часы или выходные дни:
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
+                    <div class="font-semibold text-white flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                        Глобальное расписание
+                    </div>
+                    <p class="text-slate-400">
+                        В разделе <a href="/schedule" class="text-cyan-400 underline">Расписание</a> можно задать единый график по умолчанию для всей системы с выбором часового пояса и готовыми шаблонами (например, будни 09:00–18:00).
+                    </p>
+                </div>
+                <div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
+                    <div class="font-semibold text-white flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                        Индивидуальное переопределение
+                    </div>
+                    <p class="text-slate-400">
+                        В параметрах каждого репозитория можно выбрать: следовать общему графику, опрашивать всегда круглосуточно (24/7) или настроить персональные часы и дни недели. При этом кнопка «Проверить сейчас» работает всегда.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,762 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <a href="/" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 mb-2">
+                ← Назад к списку
+            </a>
+            <h1 class="text-2xl font-bold text-white tracking-tight">
+                {{ 'Редактировать репозиторий' if repo else 'Добавить новый репозиторий' }}
+            </h1>
+            <p class="text-slate-400 text-sm mt-0.5">
+                Настройте параметры опроса Git и триггера сборки Drone CI
+            </p>
+        </div>
+    </div>
+
+    <form id="repoForm" method="POST" action="{{ '/repos/' ~ repo.id ~ '/edit' if repo else '/repos/new' }}" class="space-y-6">
+        <!-- Section 1: Основные сведения -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+            <h2 class="text-base font-semibold text-white border-b border-slate-800 pb-3 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                Основные параметры
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2 space-y-1.5">
+                    <label class="block text-xs font-medium text-slate-300">Название репозитория (Friendly Name)</label>
+                    <input 
+                        type="text" 
+                        name="name" 
+                        id="name"
+                        value="{{ repo.name if repo else '' }}" 
+                        placeholder="Например: Secure Messenger"
+                        required 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+                    >
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-slate-300">Интервал опроса (минуты)</label>
+                    <input 
+                        type="number" 
+                        name="poll_interval_minutes" 
+                        id="poll_interval_minutes"
+                        value="{{ repo.poll_interval_minutes if repo else 2 }}" 
+                        min="1" 
+                        max="1440"
+                        required 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+                    >
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 pt-2">
+                <input 
+                    type="checkbox" 
+                    name="is_active" 
+                    id="is_active" 
+                    class="w-4 h-4 rounded bg-slate-950 border-slate-700 text-cyan-600 focus:ring-cyan-500/40 focus:ring-offset-slate-900"
+                    {{ 'checked' if (not repo or repo.is_active) else '' }}
+                >
+                <label for="is_active" class="text-xs text-slate-300 cursor-pointer select-none">
+                    Включить автоматический опрос репозитория по расписанию
+                </label>
+            </div>
+        </div>
+
+        <!-- Section 1.5: Расписание работы воркера -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h2 class="text-base font-semibold text-white flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                    ⏰ Расписание опроса репозитория
+                </h2>
+                <a href="/schedule" target="_blank" class="text-xs text-cyan-400 hover:text-cyan-300">
+                    Перейти к глобальному расписанию →
+                </a>
+            </div>
+
+            {% set cur_mode = repo.schedule_mode if repo else 'global' %}
+            <div class="space-y-3">
+                <label class="block text-xs font-medium text-slate-300">Режим расписания:</label>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="flex items-start gap-3 p-3.5 bg-slate-950/60 border rounded-xl cursor-pointer transition {{ 'border-cyan-500/60 bg-slate-950/90' if cur_mode == 'global' else 'border-slate-800 hover:border-slate-700' }}" id="label_mode_global">
+                        <input 
+                            type="radio" 
+                            name="schedule_mode" 
+                            value="global" 
+                            class="mt-1 text-cyan-500 focus:ring-cyan-500" 
+                            {{ 'checked' if cur_mode == 'global' else '' }}
+                            onchange="onScheduleModeChange('global')"
+                        >
+                        <div>
+                            <div class="text-xs font-semibold text-white">🌐 Как в общем расписании</div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                {% if global_schedule_cfg and global_schedule_cfg.enabled %}
+                                    Ограничено днями и часами из общих настроек
+                                {% else %}
+                                    Общее расписание отключено (воркер работает 24/7)
+                                {% endif %}
+                            </div>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-3.5 bg-slate-950/60 border rounded-xl cursor-pointer transition {{ 'border-cyan-500/60 bg-slate-950/90' if cur_mode == 'always' else 'border-slate-800 hover:border-slate-700' }}" id="label_mode_always">
+                        <input 
+                            type="radio" 
+                            name="schedule_mode" 
+                            value="always" 
+                            class="mt-1 text-cyan-500 focus:ring-cyan-500" 
+                            {{ 'checked' if cur_mode == 'always' else '' }}
+                            onchange="onScheduleModeChange('always')"
+                        >
+                        <div>
+                            <div class="text-xs font-semibold text-white">⚡ Всегда круглосуточно (24/7)</div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                Опрашивать всегда, игнорируя любые глобальные паузы
+                            </div>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-3.5 bg-slate-950/60 border rounded-xl cursor-pointer transition {{ 'border-cyan-500/60 bg-slate-950/90' if cur_mode == 'custom' else 'border-slate-800 hover:border-slate-700' }}" id="label_mode_custom">
+                        <input 
+                            type="radio" 
+                            name="schedule_mode" 
+                            value="custom" 
+                            class="mt-1 text-cyan-500 focus:ring-cyan-500" 
+                            {{ 'checked' if cur_mode == 'custom' else '' }}
+                            onchange="onScheduleModeChange('custom')"
+                        >
+                        <div>
+                            <div class="text-xs font-semibold text-white">🎯 Индивидуальное расписание</div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                Задать свои дни недели и рабочие часы для этого репозитория
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Custom Schedule Configuration Block (collapsible) -->
+            {% set custom_sched = repo.get_custom_schedule() if repo else {} %}
+            <div id="customScheduleBlock" class="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-4 {{ '' if cur_mode == 'custom' else 'hidden' }}">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                    <div class="space-y-1">
+                        <span class="text-xs font-semibold text-slate-200">Индивидуальные рабочие часы</span>
+                        <p class="text-[11px] text-slate-400">Укажите дни недели и время со скольки до скольки искать новые коммиты</p>
+                    </div>
+
+                    <!-- Presets -->
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="text-[11px] text-slate-400">Шаблон:</span>
+                        <button type="button" onclick="applyRepoCustomPreset('standard')" class="px-2 py-0.5 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700">
+                            Пн–Пт 09:00–18:00
+                        </button>
+                        <button type="button" onclick="applyRepoCustomPreset('extended')" class="px-2 py-0.5 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700">
+                            Пн–Пт 10:00–19:00
+                        </button>
+                        <button type="button" onclick="applyRepoCustomPreset('allday')" class="px-2 py-0.5 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700">
+                            Все дни (24ч)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Custom Timezone -->
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-slate-300">Часовой пояс для этого расписания</label>
+                    <select 
+                        name="custom_schedule_timezone" 
+                        id="custom_schedule_timezone" 
+                        class="w-full md:w-80 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                    >
+                        {% for tz_val, tz_lbl in timezones %}
+                        <option value="{{ tz_val }}" {{ 'selected' if (repo and repo.custom_schedule_timezone == tz_val) or (not repo and tz_val == 'Europe/Moscow') else '' }}>
+                            {{ tz_lbl }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Custom 7 Days -->
+                <div class="space-y-2 pt-2">
+                    {% for day_key in day_keys %}
+                    {% set d_data = custom_sched.get(day_key, {'enabled': loop.index <= 5, 'start': '09:00', 'end': '18:00'}) %}
+                    <div class="p-2.5 bg-slate-900/70 border border-slate-800/80 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-center gap-3 min-w-[170px]">
+                            <span class="w-7 h-7 rounded bg-slate-950 border border-slate-800 flex items-center justify-center font-bold text-xs {{ 'text-purple-400' if loop.index <= 5 else 'text-amber-400' }}">
+                                {{ day_shorts[day_key] }}
+                            </span>
+                            <div>
+                                <div class="text-xs font-medium text-white">{{ day_names[day_key] }}</div>
+                                <label class="inline-flex items-center gap-1.5 cursor-pointer mt-0.5">
+                                    <input 
+                                        type="checkbox" 
+                                        name="repo_day_{{ day_key }}_enabled" 
+                                        id="repo_day_{{ day_key }}_enabled" 
+                                        class="w-3.5 h-3.5 rounded bg-slate-950 border-slate-700 text-purple-500 focus:ring-purple-500" 
+                                        {{ 'checked' if d_data.enabled else '' }}
+                                        onchange="toggleRepoDayInputs('{{ day_key }}', this.checked)"
+                                    >
+                                    <span class="text-[11px] text-slate-400" id="repo_label_{{ day_key }}">
+                                        {{ 'Активен' if d_data.enabled else 'Выключен' }}
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="repo_times_{{ day_key }}" class="flex items-center gap-2 {{ '' if d_data.enabled else 'opacity-40 pointer-events-none' }}">
+                            <span class="text-[11px] text-slate-400">с</span>
+                            <input 
+                                type="time" 
+                                name="repo_day_{{ day_key }}_start" 
+                                id="repo_day_{{ day_key }}_start" 
+                                value="{{ d_data.start }}" 
+                                class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500/40"
+                            >
+                            <span class="text-[11px] text-slate-400">до</span>
+                            <input 
+                                type="time" 
+                                name="repo_day_{{ day_key }}_end" 
+                                id="repo_day_{{ day_key }}_end" 
+                                value="{{ d_data.end }}" 
+                                class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500/40"
+                            >
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Настройки Git -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+            <h2 class="text-base font-semibold text-white border-b border-slate-800 pb-3 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                Настройки Git и Ветки
+            </h2>
+
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Git URL репозитория</label>
+                <input 
+                    type="text" 
+                    name="git_url" 
+                    id="git_url"
+                    value="{{ repo.git_url if repo else '' }}" 
+                    placeholder="https://github.com/shpion34rus/secure-messenger.git"
+                    required 
+                    class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
+                >
+                <p class="text-[11px] text-slate-500">
+                    HTTPS URL репозитория для выполнения быстрой проверки через <code>git ls-remote</code>.
+                </p>
+            </div>
+
+            <!-- Credentials selector for Git -->
+            <div class="space-y-1.5 bg-slate-950/40 border border-slate-800/80 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                    <label class="block text-xs font-semibold text-slate-200">
+                        🔑 Учетная запись Git (Реестр креденшелов)
+                    </label>
+                    <a href="/credentials/new" target="_blank" class="text-xs text-cyan-400 hover:text-cyan-300 font-medium">
+                        + Новый креденшел
+                    </a>
+                </div>
+                <select 
+                    name="git_credential_id" 
+                    id="git_credential_id" 
+                    onchange="onGitCredentialChange()"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
+                >
+                    <option value="">— Ручной ввод (или публичный репозиторий) —</option>
+                    {% for cred in git_credentials %}
+                    <option value="{{ cred.id }}" {{ 'selected' if repo and repo.git_credential_id == cred.id else '' }}>
+                        🔑 {{ cred.name }}{% if cred.username %} ({{ cred.username }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-[11px] text-slate-500">
+                    Выберите сохраненный креденшел из реестра, либо выберите ручной ввод ниже.
+                </p>
+            </div>
+
+            <!-- Private repo manual credentials toggle -->
+            <div id="gitManualCredentialsWrapper" class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <input 
+                            type="checkbox" 
+                            id="is_private_repo" 
+                            onchange="togglePrivateCredentials()"
+                            class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-emerald-600 focus:ring-emerald-500/40 focus:ring-offset-slate-950"
+                            {{ 'checked' if (repo and not repo.git_credential_id and (repo.git_username or repo.git_password)) else '' }}
+                        >
+                        <div>
+                            <label for="is_private_repo" class="text-xs font-medium text-slate-200 cursor-pointer select-none">
+                                Приватный репозиторий (ручной ввод логина/пароля)
+                            </label>
+                            <p class="text-[11px] text-slate-500">
+                                Укажите логин и Personal Access Token (PAT) вручную для этого репозитория
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="privateCredentialsBlock" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 {{ '' if (repo and not repo.git_credential_id and (repo.git_username or repo.git_password)) else 'hidden' }}">
+                    <div class="space-y-1.5">
+                        <label class="block text-xs font-medium text-slate-300">Логин GitHub / Username</label>
+                        <input 
+                            type="text" 
+                            name="git_username" 
+                            id="git_username"
+                            value="{{ repo.git_username if repo and repo.git_username else '' }}" 
+                            placeholder="shpion34rus"
+                            autocomplete="off"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
+                        >
+                    </div>
+                    <div class="space-y-1.5">
+                        <label class="block text-xs font-medium text-slate-300">
+                            Пароль или Personal Access Token (PAT)
+                            {% if repo and repo.git_password %}
+                            <span class="text-emerald-400 font-normal text-[10px] ml-1">(сохранён)</span>
+                            {% endif %}
+                        </label>
+                        <input 
+                            type="password" 
+                            name="git_password" 
+                            id="git_password"
+                            placeholder="{{ 'Оставьте пустым, чтобы не менять' if (repo and repo.git_password) else 'ghp_xxxxxxxxxxxx' }}"
+                            autocomplete="new-password"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
+                        >
+                    </div>
+                </div>
+            </div>
+
+            <!-- Branch Tracking Section -->
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div class="flex items-center gap-3">
+                    <input 
+                        type="checkbox" 
+                        name="track_all_branches" 
+                        id="track_all_branches" 
+                        onchange="toggleTrackAllBranches()"
+                        class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-cyan-500/40 focus:ring-offset-slate-950"
+                        {{ 'checked' if (repo and repo.track_all_branches) else '' }}
+                    >
+                    <div>
+                        <label for="track_all_branches" class="text-xs font-medium text-cyan-300 cursor-pointer select-none">
+                            🌐 Отслеживать все ветки репозитория
+                        </label>
+                        <p class="text-[11px] text-slate-500">
+                            Автоматически опрашивать появление новых коммитов во всех удаленных ветках
+                        </p>
+                    </div>
+                </div>
+
+                <div id="trackedBranchesBlock" class="space-y-1.5 pt-2 {{ 'opacity-40 pointer-events-none' if (repo and repo.track_all_branches) else '' }}">
+                    <label class="block text-xs font-medium text-slate-300">
+                        Список отслеживаемых веток (через запятую)
+                    </label>
+                    <input 
+                        type="text" 
+                        name="tracked_branches" 
+                        id="tracked_branches"
+                        value="{{ repo.tracked_branches if repo else 'main' }}" 
+                        placeholder="main, develop, staging, release/*"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+                    >
+                    <p class="text-[11px] text-slate-500">
+                        Поддерживаются точные имена веток и маски с подстановкой (например: <code>main, dev, release/*</code>).
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: Настройки Drone CI -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+            <h2 class="text-base font-semibold text-white border-b border-slate-800 pb-3 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                Параметры Drone CI
+            </h2>
+
+            <!-- Drone Credentials Registry Selector -->
+            <div class="space-y-1.5 bg-slate-950/40 border border-slate-800/80 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                    <label class="block text-xs font-semibold text-slate-200">
+                        ⚡ Токен Drone CI (Реестр креденшелов)
+                    </label>
+                    <a href="/credentials/new" target="_blank" class="text-xs text-cyan-400 hover:text-cyan-300 font-medium">
+                        + Новый креденшел
+                    </a>
+                </div>
+                <select 
+                    name="drone_credential_id" 
+                    id="drone_credential_id" 
+                    onchange="onDroneCredentialChange()"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                >
+                    <option value="">— Ручной ввод токена —</option>
+                    {% for cred in drone_credentials %}
+                    <option value="{{ cred.id }}" data-server="{{ cred.server_url or '' }}" {{ 'selected' if repo and repo.drone_credential_id == cred.id else '' }}>
+                        ⚡ {{ cred.name }}{% if cred.server_url %} ({{ cred.server_url }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-[11px] text-slate-500">
+                    При выборе креденшела токен и адрес сервера берутся из централизованного реестра.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-slate-300">Сервер Drone CI</label>
+                    <input 
+                        type="url" 
+                        name="drone_server" 
+                        id="drone_server"
+                        value="{{ repo.drone_server if repo else default_drone_server }}" 
+                        placeholder="https://drone.uberserver.ru"
+                        required 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                    >
+                </div>
+
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-slate-300">Имя репозитория в Drone CI (owner/repo)</label>
+                    <input 
+                        type="text" 
+                        name="drone_repo" 
+                        id="drone_repo"
+                        value="{{ repo.drone_repo if repo else '' }}" 
+                        placeholder="shpion34rus/secure-messenger"
+                        required 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                    >
+                </div>
+            </div>
+
+            <div id="droneManualTokenBlock" class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">
+                    Персональный токен Drone CI
+                    {% if repo and repo.drone_token %}
+                    <span class="text-emerald-400 font-normal text-[10px] ml-1">(сохранён)</span>
+                    {% endif %}
+                </label>
+                <input 
+                    type="password" 
+                    name="drone_token" 
+                    id="drone_token"
+                    value="{{ repo.drone_token if repo else default_drone_token }}" 
+                    placeholder="RmwmN2opjJOdvfT633FVppWi1J3Vhqfj"
+                    autocomplete="new-password"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                >
+                <p class="text-[11px] text-slate-500">
+                    Токен можно получить в Drone CI: клик на аватар профиля → «User Profile» → «Your Personal Token».
+                </p>
+            </div>
+
+            <!-- Drone CI Custom Event Notice -->
+            <div class="flex items-center justify-between text-xs text-slate-400 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 py-2.5">
+                <div class="flex items-center gap-2">
+                    <span>💡</span>
+                    <span>Для работы авто-опроса и сборок в <code class="text-cyan-400 font-mono">.drone.yml</code> требуется событие <code class="text-cyan-400 font-mono">custom</code>.</span>
+                </div>
+                <a href="/guide#drone-yml" target="_blank" class="text-cyan-400 hover:text-cyan-300 hover:underline shrink-0 font-medium">Инструкция →</a>
+            </div>
+        </div>
+
+        <!-- Connection Test Box -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-semibold text-white">Проверка подключения</h3>
+                    <p class="text-xs text-slate-400">Протестировать доступ к Git-репозиторию и Drone CI до сохранения</p>
+                </div>
+                <button 
+                    type="button" 
+                    id="btnTestConn"
+                    onclick="runTestConnection()" 
+                    class="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold px-4 py-2 rounded-lg border border-slate-700 transition"
+                >
+                    <span id="testSpinner" class="hidden animate-spin">⏳</span>
+                    🧪 Проверить подключение
+                </button>
+            </div>
+
+            <div id="testResultBox" class="hidden space-y-3 pt-2">
+                <!-- Git Status Result -->
+                <div id="gitTestResult" class="p-3 rounded-lg text-xs font-mono border"></div>
+                <!-- Drone Status Result -->
+                <div id="droneTestResult" class="p-3 rounded-lg text-xs font-mono border"></div>
+                <!-- Remote branches preview tag cloud -->
+                <div id="branchesCloud" class="hidden p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-1.5">
+                    <div class="text-[11px] text-slate-400 font-medium">Обнаруженные ветки в Git (кликните, чтобы добавить в список):</div>
+                    <div id="branchesBadges" class="flex flex-wrap gap-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex items-center justify-end gap-3 pt-4">
+            <a href="/" class="px-5 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                Отмена
+            </a>
+            <button 
+                type="submit" 
+                class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm px-6 py-2.5 rounded-lg shadow transition hover:shadow-emerald-500/20"
+            >
+                {{ 'Сохранить изменения' if repo else 'Создать репозиторий' }}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function onScheduleModeChange(mode) {
+    const customBlock = document.getElementById('customScheduleBlock');
+    const lblGlobal = document.getElementById('label_mode_global');
+    const lblAlways = document.getElementById('label_mode_always');
+    const lblCustom = document.getElementById('label_mode_custom');
+
+    [lblGlobal, lblAlways, lblCustom].forEach(l => {
+        if (l) {
+            l.classList.remove('border-cyan-500/60', 'bg-slate-950/90');
+            l.classList.add('border-slate-800');
+        }
+    });
+
+    if (mode === 'custom') {
+        if (customBlock) customBlock.classList.remove('hidden');
+        if (lblCustom) {
+            lblCustom.classList.remove('border-slate-800');
+            lblCustom.classList.add('border-cyan-500/60', 'bg-slate-950/90');
+        }
+    } else {
+        if (customBlock) customBlock.classList.add('hidden');
+        const activeLbl = mode === 'always' ? lblAlways : lblGlobal;
+        if (activeLbl) {
+            activeLbl.classList.remove('border-slate-800');
+            activeLbl.classList.add('border-cyan-500/60', 'bg-slate-950/90');
+        }
+    }
+}
+
+function toggleRepoDayInputs(dayKey, enabled) {
+    const timesDiv = document.getElementById('repo_times_' + dayKey);
+    const labelSpan = document.getElementById('repo_label_' + dayKey);
+    if (timesDiv) {
+        if (enabled) {
+            timesDiv.classList.remove('opacity-40', 'pointer-events-none');
+        } else {
+            timesDiv.classList.add('opacity-40', 'pointer-events-none');
+        }
+    }
+    if (labelSpan) {
+        labelSpan.textContent = enabled ? 'Активен' : 'Выключен';
+    }
+}
+
+function applyRepoCustomPreset(preset) {
+    const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    days.forEach((day, index) => {
+        const cb = document.getElementById('repo_day_' + day + '_enabled');
+        const startInput = document.getElementById('repo_day_' + day + '_start');
+        const endInput = document.getElementById('repo_day_' + day + '_end');
+        if (!cb || !startInput || !endInput) return;
+
+        if (preset === 'standard') {
+            const isWeekday = index < 5;
+            cb.checked = isWeekday;
+            startInput.value = '09:00';
+            endInput.value = '18:00';
+            toggleRepoDayInputs(day, isWeekday);
+        } else if (preset === 'extended') {
+            const isWeekday = index < 5;
+            cb.checked = isWeekday;
+            startInput.value = '10:00';
+            endInput.value = '19:00';
+            toggleRepoDayInputs(day, isWeekday);
+        } else if (preset === 'allday') {
+            cb.checked = true;
+            startInput.value = '00:00';
+            endInput.value = '23:59';
+            toggleRepoDayInputs(day, true);
+        }
+    });
+}
+
+function onGitCredentialChange() {
+    const gitCredSelect = document.getElementById('git_credential_id');
+    const manualWrapper = document.getElementById('gitManualCredentialsWrapper');
+    if (gitCredSelect.value) {
+        manualWrapper.classList.add('opacity-40', 'pointer-events-none');
+    } else {
+        manualWrapper.classList.remove('opacity-40', 'pointer-events-none');
+    }
+}
+
+function onDroneCredentialChange() {
+    const droneCredSelect = document.getElementById('drone_credential_id');
+    const tokenBlock = document.getElementById('droneManualTokenBlock');
+    const tokenInput = document.getElementById('drone_token');
+    const serverInput = document.getElementById('drone_server');
+
+    if (droneCredSelect.value) {
+        tokenBlock.classList.add('opacity-40', 'pointer-events-none');
+        tokenInput.removeAttribute('required');
+        const selectedOpt = droneCredSelect.options[droneCredSelect.selectedIndex];
+        if (selectedOpt && selectedOpt.dataset.server) {
+            serverInput.value = selectedOpt.dataset.server;
+        }
+    } else {
+        tokenBlock.classList.remove('opacity-40', 'pointer-events-none');
+    }
+}
+
+function togglePrivateCredentials() {
+    const isPrivate = document.getElementById('is_private_repo').checked;
+    const block = document.getElementById('privateCredentialsBlock');
+    if (isPrivate) {
+        block.classList.remove('hidden');
+    } else {
+        block.classList.add('hidden');
+    }
+}
+
+function toggleTrackAllBranches() {
+    const trackAll = document.getElementById('track_all_branches').checked;
+    const block = document.getElementById('trackedBranchesBlock');
+    if (trackAll) {
+        block.classList.add('opacity-40', 'pointer-events-none');
+    } else {
+        block.classList.remove('opacity-40', 'pointer-events-none');
+    }
+}
+
+async function runTestConnection() {
+    const btn = document.getElementById('btnTestConn');
+    const spinner = document.getElementById('testSpinner');
+    const resultBox = document.getElementById('testResultBox');
+    const gitBox = document.getElementById('gitTestResult');
+    const droneBox = document.getElementById('droneTestResult');
+    const cloudBox = document.getElementById('branchesCloud');
+    const badgesDiv = document.getElementById('branchesBadges');
+
+    const gitUrl = document.getElementById('git_url').value.trim();
+    const gitCredId = document.getElementById('git_credential_id').value;
+    const gitUsername = document.getElementById('git_username').value.trim();
+    const gitPassword = document.getElementById('git_password').value.trim();
+    
+    const droneCredId = document.getElementById('drone_credential_id').value;
+    const droneServer = document.getElementById('drone_server').value.trim();
+    const droneRepo = document.getElementById('drone_repo').value.trim();
+    const droneToken = document.getElementById('drone_token').value.trim();
+
+    if (!gitUrl) {
+        showToast("Укажите Git URL репозитория", "warning");
+        return;
+    }
+    if (!droneServer || !droneRepo) {
+        showToast("Заполните настройки Drone CI для проверки", "warning");
+        return;
+    }
+    if (!droneCredId && !droneToken) {
+        showToast("Укажите токен Drone CI или выберите креденшел", "warning");
+        return;
+    }
+
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    resultBox.classList.remove('hidden');
+    gitBox.className = "p-3 rounded-lg text-xs font-mono border bg-slate-950 border-slate-800 text-slate-400";
+    gitBox.textContent = "Проверка доступа к Git репозиторию...";
+    droneBox.className = "p-3 rounded-lg text-xs font-mono border bg-slate-950 border-slate-800 text-slate-400";
+    droneBox.textContent = "Проверка подключения к Drone CI...";
+    cloudBox.classList.add('hidden');
+    badgesDiv.innerHTML = "";
+
+    try {
+        const payload = {
+            git_url: gitUrl,
+            git_credential_id: gitCredId ? parseInt(gitCredId) : null,
+            git_username: gitUsername || null,
+            git_password: gitPassword || null,
+            drone_server: droneServer,
+            drone_repo: droneRepo,
+            drone_credential_id: droneCredId ? parseInt(droneCredId) : null,
+            drone_token: droneToken || ""
+        };
+
+        const response = await fetch('/api/test-connection', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        // Render Git result
+        if (data.git_ok) {
+            gitBox.className = "p-3 rounded-lg text-xs font-mono border bg-emerald-950/40 border-emerald-800 text-emerald-300";
+            gitBox.innerHTML = `✅ Git: ${data.git_message}`;
+
+            if (data.git_branches && data.git_branches.length > 0) {
+                cloudBox.classList.remove('hidden');
+                data.git_branches.forEach(b => {
+                    const badge = document.createElement('span');
+                    badge.className = "inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 cursor-pointer transition";
+                    badge.textContent = b;
+                    badge.title = "Нажмите, чтобы добавить эту ветку в список";
+                    badge.onclick = () => addBranchToTracked(b);
+                    badgesDiv.appendChild(badge);
+                });
+            }
+        } else {
+            gitBox.className = "p-3 rounded-lg text-xs font-mono border bg-rose-950/40 border-rose-800 text-rose-300";
+            gitBox.innerHTML = `❌ Git: ${data.git_message}`;
+        }
+
+        // Render Drone result
+        if (data.drone_ok) {
+            droneBox.className = "p-3 rounded-lg text-xs font-mono border bg-emerald-950/40 border-emerald-800 text-emerald-300";
+            droneBox.innerHTML = `✅ Drone CI: ${data.drone_message}`;
+        } else {
+            droneBox.className = "p-3 rounded-lg text-xs font-mono border bg-rose-950/40 border-rose-800 text-rose-300";
+            droneBox.innerHTML = `❌ Drone CI: ${data.drone_message}`;
+        }
+
+    } catch (err) {
+        gitBox.className = "p-3 rounded-lg text-xs font-mono border bg-rose-950/40 border-rose-800 text-rose-300";
+        gitBox.textContent = `Сетевая ошибка при запросе проверки: ${err.message}`;
+    } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+    }
+}
+
+function addBranchToTracked(branchName) {
+    const input = document.getElementById('tracked_branches');
+    let list = input.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!list.includes(branchName)) {
+        list.push(branchName);
+        input.value = list.join(', ');
+        showToast(`Ветка '${branchName}' добавлена в список`, 'success');
+    } else {
+        showToast(`Ветка '${branchName}' уже в списке`, 'info');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    onGitCredentialChange();
+    onDroneCredentialChange();
+});
+</script>
+{% endblock %}

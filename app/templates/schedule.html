@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <!-- Header banner -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                    <span class="text-2xl">⏰</span>
+                    Расписание работы воркера
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">
+                    Настройка рабочих часов фонового воркера по дням недели. Вне разрешённых окон автоматический опрос Git и запуск сборок приостанавливаются.
+                </p>
+            </div>
+            
+            <!-- Current Status Badge -->
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-3 shrink-0">
+                <span class="relative flex h-3 w-3">
+                    {% if not cfg.enabled %}
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-cyan-400"></span>
+                    {% elif is_active_now %}
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+                    {% else %}
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-400"></span>
+                    {% endif %}
+                </span>
+                <div>
+                    <div class="text-xs font-semibold text-slate-200">
+                        {% if not cfg.enabled %}
+                            Круглосуточно (24/7)
+                        {% elif is_active_now %}
+                            Воркер активен
+                        {% else %}
+                            Вне графика (пауза)
+                        {% endif %}
+                    </div>
+                    <div class="text-[11px] text-slate-400">
+                        {{ current_time_str }} ({{ cfg.timezone }})
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% if saved %}
+        <div class="mt-4 p-3 bg-emerald-950/50 border border-emerald-800/80 rounded-xl text-emerald-300 text-xs flex items-center gap-2">
+            <svg class="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            Расписание успешно сохранено и применено!
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Main Schedule Form -->
+    <form method="POST" action="/schedule" class="space-y-6">
+        <!-- Section 1: Activation & Timezone -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+            <h2 class="text-base font-semibold text-white border-b border-slate-800 pb-3 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                Основные параметры
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Schedule Enabled Toggle -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-medium text-slate-300">Режим ограничения работы</label>
+                    <label class="flex items-start gap-3 p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                        <input 
+                            type="checkbox" 
+                            name="enabled" 
+                            id="schedule_enabled" 
+                            class="w-4 h-4 mt-0.5 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500" 
+                            {{ 'checked' if cfg.enabled else '' }}
+                            onchange="toggleScheduleContainer(this.checked)"
+                        >
+                        <div>
+                            <div class="text-sm font-medium text-white">Включить опрос строго по расписанию</div>
+                            <div class="text-xs text-slate-400 mt-0.5">
+                                Если выключено — воркер опрашивает репозитории круглосуточно (24/7)
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Timezone Selector -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-medium text-slate-300">Часовой пояс (Timezone)</label>
+                    <div class="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
+                        <select 
+                            name="timezone" 
+                            id="timezone_select" 
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                        >
+                            {% for tz_val, tz_lbl in timezones %}
+                            <option value="{{ tz_val }}" {{ 'selected' if cfg.timezone == tz_val else '' }}>
+                                {{ tz_lbl }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-[11px] text-slate-500">
+                            Все указанные интервалы часов и минут будут сверяться относительно выбранного пояса.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Days of Week Schedule -->
+        <div id="schedule_days_container" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm {{ '' if cfg.enabled else 'opacity-60' }}">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-3">
+                <h2 class="text-base font-semibold text-white flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                    Часы работы по дням недели
+                </h2>
+                
+                <!-- Quick Preset Buttons -->
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="text-xs text-slate-400 mr-1">Шаблоны:</span>
+                    <button type="button" onclick="applyPreset('standard')" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700">
+                        Будни 09:00–18:00
+                    </button>
+                    <button type="button" onclick="applyPreset('extended')" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700">
+                        Будни 10:00–19:00
+                    </button>
+                    <button type="button" onclick="applyPreset('allday')" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700">
+                        Все дни (00:00–23:59)
+                    </button>
+                    <button type="button" onclick="applyPreset('reset')" class="px-2.5 py-1 text-xs bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 rounded-lg transition border border-rose-900/50">
+                        Сбросить
+                    </button>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                {% for day_key in day_keys %}
+                {% set day_data = schedule.get(day_key, {'enabled': false, 'start': '09:00', 'end': '18:00'}) %}
+                <div class="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition hover:border-slate-700">
+                    <!-- Day Title and Toggle -->
+                    <div class="flex items-center gap-3 min-w-[200px]">
+                        <span class="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center font-bold text-xs {{ 'text-cyan-400' if loop.index <= 5 else 'text-amber-400' }}">
+                            {{ day_shorts[day_key] }}
+                        </span>
+                        <div>
+                            <div class="text-sm font-medium text-white flex items-center gap-2">
+                                {{ day_names[day_key] }}
+                                {% if loop.index > 5 %}
+                                <span class="text-[10px] font-normal text-amber-400/80 bg-amber-950/40 border border-amber-900/40 px-1.5 py-0.2 rounded">Выходной</span>
+                                {% endif %}
+                            </div>
+                            <label class="inline-flex items-center gap-2 mt-0.5 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    name="day_{{ day_key }}_enabled" 
+                                    id="day_{{ day_key }}_enabled" 
+                                    class="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500" 
+                                    {{ 'checked' if day_data.enabled else '' }}
+                                    onchange="toggleDayInputs('{{ day_key }}', this.checked)"
+                                >
+                                <span class="text-xs text-slate-400 select-none" id="label_{{ day_key }}">
+                                    {{ 'Активен' if day_data.enabled else 'Выключен' }}
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Time Interval Inputs -->
+                    <div id="times_{{ day_key }}" class="flex items-center gap-3 flex-wrap {{ '' if day_data.enabled else 'opacity-40 pointer-events-none' }}">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400">с</span>
+                            <input 
+                                type="time" 
+                                name="day_{{ day_key }}_start" 
+                                id="day_{{ day_key }}_start" 
+                                value="{{ day_data.start }}" 
+                                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                            >
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400">до</span>
+                            <input 
+                                type="time" 
+                                name="day_{{ day_key }}_end" 
+                                id="day_{{ day_key }}_end" 
+                                value="{{ day_data.end }}" 
+                                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                            >
+                        </div>
+                        <span class="text-[11px] text-slate-500 italic hidden sm:inline">
+                            (например 09:00 - 18:00)
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <p class="text-xs text-slate-400 pt-2 border-t border-slate-800">
+                💡 <strong class="text-slate-300">Подсказка:</strong> Если начало и конец одинаковы (например <code>00:00 - 00:00</code>) — опрос разрешён в течение всех 24 часов дня. Поддерживаются и ночные смены (например с <code>22:00</code> до <code>06:00</code> с переходом через полночь).
+            </p>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="flex items-center justify-between pt-2">
+            <a href="/" class="text-xs text-slate-400 hover:text-white transition">
+                ← Вернуться к репозиториям
+            </a>
+            <button 
+                type="submit" 
+                class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl shadow transition hover:shadow-emerald-500/20"
+            >
+                💾 Сохранить расписание
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+function toggleScheduleContainer(enabled) {
+    const container = document.getElementById('schedule_days_container');
+    if (container) {
+        if (enabled) {
+            container.classList.remove('opacity-60');
+        } else {
+            container.classList.add('opacity-60');
+        }
+    }
+}
+
+function toggleDayInputs(dayKey, enabled) {
+    const timesDiv = document.getElementById('times_' + dayKey);
+    const labelSpan = document.getElementById('label_' + dayKey);
+    if (timesDiv) {
+        if (enabled) {
+            timesDiv.classList.remove('opacity-40', 'pointer-events-none');
+        } else {
+            timesDiv.classList.add('opacity-40', 'pointer-events-none');
+        }
+    }
+    if (labelSpan) {
+        labelSpan.textContent = enabled ? 'Активен' : 'Выключен';
+    }
+}
+
+function applyPreset(preset) {
+    const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    
+    // Ensure schedule is enabled
+    const schedCb = document.getElementById('schedule_enabled');
+    if (schedCb && !schedCb.checked) {
+        schedCb.checked = true;
+        toggleScheduleContainer(true);
+    }
+
+    days.forEach((day, index) => {
+        const cb = document.getElementById('day_' + day + '_enabled');
+        const startInput = document.getElementById('day_' + day + '_start');
+        const endInput = document.getElementById('day_' + day + '_end');
+        
+        if (!cb || !startInput || !endInput) return;
+
+        if (preset === 'standard') {
+            const isWeekday = index < 5;
+            cb.checked = isWeekday;
+            startInput.value = '09:00';
+            endInput.value = '18:00';
+            toggleDayInputs(day, isWeekday);
+        } else if (preset === 'extended') {
+            const isWeekday = index < 5;
+            cb.checked = isWeekday;
+            startInput.value = '10:00';
+            endInput.value = '19:00';
+            toggleDayInputs(day, isWeekday);
+        } else if (preset === 'allday') {
+            cb.checked = true;
+            startInput.value = '00:00';
+            endInput.value = '23:59';
+            toggleDayInputs(day, true);
+        } else if (preset === 'reset') {
+            cb.checked = false;
+            startInput.value = '09:00';
+            endInput.value = '18:00';
+            toggleDayInputs(day, false);
+        }
+    });
+}
+</script>
+{% endblock %}

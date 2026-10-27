@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Top banner / stats -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <div>
+            <h1 class="text-2xl font-semibold text-white tracking-tight">Отслеживаемые репозитории</h1>
+            <p class="text-slate-400 text-sm mt-1">
+                Фоновый опрос через <code class="text-cyan-400 font-mono text-xs">git ls-remote</code> с автоматическим запуском сборок в Drone CI
+            </p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                Всего: {{ repos|length }}
+            </span>
+            <a href="/repos/new" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg shadow transition">
+                + Добавить
+            </a>
+        </div>
+    </div>
+
+    <!-- Repositories Grid / Table -->
+    {% if repos %}
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-800/60 text-xs uppercase font-medium text-slate-400 border-b border-slate-800">
+                    <tr>
+                        <th class="px-6 py-4">Репозиторий</th>
+                        <th class="px-6 py-4">Ветки</th>
+                        <th class="px-6 py-4">Drone CI</th>
+                        <th class="px-6 py-4">Интервал</th>
+                        <th class="px-6 py-4">Статус</th>
+                        <th class="px-6 py-4 text-right">Действия</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for repo in repos %}
+                    <tr class="hover:bg-slate-800/30 transition-colors" id="repo-row-{{ repo.id }}">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2.5 h-2.5 rounded-full {{ 'bg-emerald-500 ring-4 ring-emerald-500/20' if repo.is_active else 'bg-slate-600' }}"></div>
+                                <div>
+                                    <a href="/repos/{{ repo.id }}" class="font-semibold text-white hover:text-cyan-400 transition">
+                                        {{ repo.name }}
+                                    </a>
+                                    <div class="text-xs text-slate-500 font-mono truncate max-w-xs mt-0.5" title="{{ repo.git_url }}">
+                                        {{ repo.git_url }}
+                                    </div>
+                                    {% if repo.git_username %}
+                                    <span class="inline-flex items-center text-[10px] text-amber-400 font-mono mt-0.5">
+                                        🔒 Приватный ({{ repo.git_username }})
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if repo.track_all_branches %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-950 text-cyan-300 border border-cyan-800">
+                                    🌐 Все ветки
+                                </span>
+                            {% else %}
+                                <div class="flex flex-wrap gap-1 max-w-xs">
+                                    {% for b in repo.get_tracked_branch_list()[:3] %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-800 text-slate-300 border border-slate-700">
+                                        {{ b }}
+                                    </span>
+                                    {% endfor %}
+                                    {% if repo.get_tracked_branch_list()|length > 3 %}
+                                    <span class="text-xs text-slate-500 self-center">+{{ repo.get_tracked_branch_list()|length - 3 }}</span>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-xs font-mono text-slate-300">{{ repo.drone_repo }}</div>
+                            <div class="text-[11px] text-slate-500 truncate max-w-[180px]">{{ repo.drone_server }}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-xs text-slate-400">каждые {{ repo.poll_interval_minutes }} мин.</span>
+                                {% set sched_info = repo_schedules.get(repo.id, {'in_window': true, 'reason': '', 'mode': 'global'}) if repo_schedules else {'in_window': true} %}
+                                {% if not sched_info.in_window %}
+                                <span class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-400 bg-amber-950/40 border border-amber-900/50 px-1.5 py-0.5 rounded w-max" title="{{ sched_info.reason }}">
+                                    ⏸ Вне графика
+                                </span>
+                                {% elif sched_info.mode == 'custom' %}
+                                <span class="inline-flex items-center gap-1 text-[10px] text-purple-400 w-max" title="{{ sched_info.reason }}">
+                                    🎯 Расписание
+                                </span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex flex-col gap-1">
+                                {% if repo.last_status == 'success' %}
+                                    <span class="inline-flex items-center gap-1.5 text-xs text-emerald-400">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                        ОК
+                                    </span>
+                                {% elif repo.last_status == 'error' %}
+                                    <span class="inline-flex items-center gap-1.5 text-xs text-rose-400" title="{{ repo.last_error }}">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                        Ошибка
+                                    </span>
+                                {% elif repo.last_status == 'checking' %}
+                                    <span class="inline-flex items-center gap-1.5 text-xs text-amber-400 animate-pulse">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                        Опрос...
+                                    </span>
+                                {% else %}
+                                    <span class="text-xs text-slate-500">Ожидание</span>
+                                {% endif %}
+                                
+                                {% if repo.last_polled_at %}
+                                <span class="text-[10px] text-slate-500">
+                                    {{ repo.last_polled_at.strftime('%H:%M:%S (%d.%m)') }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <!-- Trigger Check Button -->
+                                <button 
+                                    onclick="triggerRepoCheck({{ repo.id }}, this)" 
+                                    class="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition" 
+                                    title="Проверить сейчас"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                </button>
+                                <!-- Toggle Active -->
+                                <button 
+                                    onclick="toggleRepoActive({{ repo.id }}, this)" 
+                                    class="p-1.5 rounded-lg {{ 'text-emerald-400 hover:bg-emerald-950/40' if repo.is_active else 'text-slate-500 hover:bg-slate-800' }} transition" 
+                                    title="{{ 'Поставить на паузу' if repo.is_active else 'Активировать' }}"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        {% if repo.is_active %}
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        {% else %}
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        {% endif %}
+                                    </svg>
+                                </button>
+                                <!-- Edit -->
+                                <a href="/repos/{{ repo.id }}/edit" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition" title="Редактировать">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                                    </svg>
+                                </a>
+                                <!-- Details -->
+                                <a href="/repos/{{ repo.id }}" class="p-1.5 rounded-lg text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 transition" title="Перейти к деталям">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="text-center py-16 px-4 bg-slate-900 border border-slate-800 rounded-2xl">
+        <div class="w-16 h-16 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-4 text-2xl">
+            📦
+        </div>
+        <h3 class="text-lg font-semibold text-white">Нет добавленных репозиториев</h3>
+        <p class="text-slate-400 text-sm max-w-md mx-auto mt-1 mb-6">
+            Добавьте ваш первый Git-репозиторий для периодического отслеживания новых коммитов и автоматического триггера Drone CI.
+        </p>
+        <a href="/repos/new" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg shadow transition">
+            Добавить первый репозиторий
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Recent Logs Feed -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2.5">
+                <h2 class="text-base font-semibold text-white">Последние события</h2>
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Live поток событий (SSE)"></span>
+            </div>
+            <a href="/logs" class="text-xs text-cyan-400 hover:underline">Открыть полный журнал →</a>
+        </div>
+        <div id="indexLogsContainer" class="space-y-2 {% if not recent_logs %}hidden{% endif %}">
+            {% for log in recent_logs %}
+            <div class="flex items-start justify-between gap-4 py-2 px-3 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs" data-id="{{ log.id }}">
+                <div class="flex items-start gap-2.5">
+                    <span class="mt-0.5 inline-block w-2 h-2 rounded-full 
+                        {{ 'bg-emerald-400' if log.level == 'success' else ('bg-rose-500' if log.level == 'error' else ('bg-amber-400' if log.level == 'warning' else 'bg-slate-500')) }}">
+                    </span>
+                    <div>
+                        <span class="font-medium text-slate-200">{{ log.repo_name }}</span>
+                        {% if log.branch_name %}
+                        <span class="font-mono text-cyan-400 ml-1">[{{ log.branch_name }}]</span>
+                        {% endif %}
+                        <span class="text-slate-400 ml-2">{{ log.message }}</span>
+                    </div>
+                </div>
+                <div class="text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                    {{ log.created_at.strftime('%H:%M:%S') }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p id="noIndexLogsPlaceholder" class="text-slate-500 text-xs {% if recent_logs %}hidden{% endif %}">Событий пока нет.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const stream = new EventSource('/api/logs/stream');
+    const container = document.getElementById('indexLogsContainer');
+    const placeholder = document.getElementById('noIndexLogsPlaceholder');
+
+    stream.addEventListener('log', (e) => {
+        try {
+            const log = JSON.parse(e.data);
+            if (!container) return;
+            if (log.id && container.querySelector(`div[data-id="${log.id}"]`)) return;
+
+            if (placeholder) placeholder.classList.add('hidden');
+            container.classList.remove('hidden');
+
+            let colorDot = 'bg-slate-500';
+            if (log.level === 'success') colorDot = 'bg-emerald-400';
+            else if (log.level === 'error') colorDot = 'bg-rose-500';
+            else if (log.level === 'warning') colorDot = 'bg-amber-400';
+
+            const branchHtml = log.branch_name ? `<span class="font-mono text-cyan-400 ml-1">[${escapeHtml(log.branch_name)}]</span>` : '';
+            const timeStr = log.created_at ? log.created_at.split(' ')[1] || log.created_at : '';
+
+            const item = document.createElement('div');
+            item.className = 'flex items-start justify-between gap-4 py-2 px-3 rounded-lg bg-cyan-950/40 border border-cyan-800/60 text-xs transition-colors duration-1000';
+            if (log.id) item.setAttribute('data-id', log.id);
+
+            item.innerHTML = `
+                <div class="flex items-start gap-2.5">
+                    <span class="mt-0.5 inline-block w-2 h-2 rounded-full ${colorDot}"></span>
+                    <div>
+                        <span class="font-medium text-slate-200">${escapeHtml(log.repo_name)}</span>
+                        ${branchHtml}
+                        <span class="text-slate-400 ml-2">${escapeHtml(log.message)}</span>
+                    </div>
+                </div>
+                <div class="text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                    ${escapeHtml(timeStr)}
+                </div>
+            `;
+
+            container.insertBefore(item, container.firstChild);
+            setTimeout(() => {
+                item.className = 'flex items-start justify-between gap-4 py-2 px-3 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs transition-colors duration-1000';
+            }, 300);
+
+            while (container.children.length > 8) {
+                container.removeChild(container.lastChild);
+            }
+        } catch (err) {}
+    });
+
+    stream.addEventListener('clear', (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            if (!data.repo_id && container) {
+                container.innerHTML = '';
+                container.classList.add('hidden');
+                if (placeholder) placeholder.classList.remove('hidden');
+            }
+        } catch (err) {}
+    });
+});
+</script>
+{% endblock %}

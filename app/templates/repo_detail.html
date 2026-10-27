@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header / Nav -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <div>
+            <a href="/" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 mb-2">
+                ← Назад к списку репозиториев
+            </a>
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl font-bold text-white tracking-tight">{{ repo.name }}</h1>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold {{ 'bg-emerald-950 text-emerald-300 border border-emerald-800' if repo.is_active else 'bg-slate-800 text-slate-400 border border-slate-700' }}">
+                    {{ 'Активен' if repo.is_active else 'На паузе' }}
+                </span>
+            </div>
+            <div class="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400 mt-2">
+                <span>URL: <span class="text-slate-200">{{ repo.git_url }}</span></span>
+                <span>Drone: <span class="text-cyan-400">{{ repo.drone_repo }}</span></span>
+                <span>Интервал: <span class="text-slate-200">{{ repo.poll_interval_minutes }} мин.</span></span>
+                <span>Режим расписания: 
+                    {% if repo.schedule_mode == 'always' %}
+                        <span class="text-emerald-400">24/7 (Всегда)</span>
+                    {% elif repo.schedule_mode == 'custom' %}
+                        <span class="text-purple-400">Индивидуальное ({{ repo.custom_schedule_timezone }})</span>
+                    {% else %}
+                        <span class="text-cyan-400">По умолчанию (Глобальное)</span>
+                    {% endif %}
+                    {% if not in_window %}
+                        <span class="text-amber-400 font-bold ml-1" title="{{ schedule_reason }}">[⏸ Вне графика]</span>
+                    {% else %}
+                        <span class="text-emerald-400 text-[10px] ml-1">[Активен]</span>
+                    {% endif %}
+                </span>
+                {% if repo.git_credential %}
+                <span>Git Креденшел: <a href="/credentials/{{ repo.git_credential.id }}/edit" class="text-amber-300 hover:underline">🔑 {{ repo.git_credential.name }}</a></span>
+                {% endif %}
+                {% if repo.drone_credential %}
+                <span>Drone Креденшел: <a href="/credentials/{{ repo.drone_credential.id }}/edit" class="text-cyan-300 hover:underline">⚡ {{ repo.drone_credential.name }}</a></span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+            <!-- Check Now Button -->
+            <button 
+                onclick="triggerRepoCheck({{ repo.id }}, this)" 
+                class="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-medium px-3.5 py-2 rounded-lg border border-slate-700 transition"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Проверить сейчас
+            </button>
+
+            <!-- Edit Button -->
+            <a 
+                href="/repos/{{ repo.id }}/edit" 
+                class="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium px-3.5 py-2 rounded-lg border border-slate-700 transition"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                </svg>
+                Редактировать
+            </a>
+
+            <!-- Delete Button -->
+            <button 
+                onclick="deleteRepo({{ repo.id }}, '{{ repo.name }}')" 
+                class="inline-flex items-center gap-1.5 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 text-xs font-medium px-3.5 py-2 rounded-lg border border-rose-800/80 transition"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Удалить
+            </button>
+        </div>
+    </div>
+
+    <!-- Error Banner if last status is error -->
+    {% if repo.last_status == 'error' and repo.last_error %}
+    <div class="bg-rose-950/40 border border-rose-800/80 rounded-2xl p-4 text-xs font-mono text-rose-300 flex items-start gap-3">
+        <span class="text-base">⚠️</span>
+        <div>
+            <div class="font-semibold text-rose-200">Последняя ошибка опроса:</div>
+            <div class="mt-1">{{ repo.last_error }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Drone CI Trigger Tip -->
+    <div class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5">
+        <div class="flex items-center gap-2">
+            <span>💡</span>
+            <span>Для работы авто-опроса и ручных запусков в <code class="text-cyan-400 font-mono">.drone.yml</code> требуется событие <code class="text-cyan-400 font-mono">custom</code>.</span>
+        </div>
+        <a href="/guide#drone-yml" class="text-cyan-400 hover:text-cyan-300 hover:underline shrink-0 font-medium">Инструкция →</a>
+    </div>
+
+    <!-- Branches List -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+        <div class="p-5 border-b border-slate-800 flex items-center justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-white">Отслеживаемые ветки</h2>
+                <p class="text-xs text-slate-400 mt-0.5">
+                    {% if repo.track_all_branches %}
+                    Режим: <span class="text-cyan-400 font-semibold">Все ветки</span> (автоматическое обнаружение любых веток в репозитории)
+                    {% else %}
+                    Режим: <span class="text-slate-300 font-semibold">Выборочные ветки</span> ({{ repo.tracked_branches }})
+                    {% endif %}
+                </p>
+            </div>
+            <span class="text-xs font-medium text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full">
+                Зафиксировано веток: {{ branches|length }}
+            </span>
+        </div>
+
+        {% if branches %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-800/60 text-xs uppercase font-medium text-slate-400 border-b border-slate-800">
+                    <tr>
+                        <th class="px-6 py-3.5">Ветка</th>
+                        <th class="px-6 py-3.5">Последний SHA</th>
+                        <th class="px-6 py-3.5">Билд в Drone</th>
+                        <th class="px-6 py-3.5">Обновлено</th>
+                        <th class="px-6 py-3.5 text-right">Действие</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for b in branches %}
+                    <tr class="hover:bg-slate-800/30 transition-colors">
+                        <td class="px-6 py-4 font-mono font-medium text-cyan-400">
+                            {{ b.branch_name }}
+                            {% if b.is_stale %}
+                            <span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-sans font-normal bg-rose-950 text-rose-300 border border-rose-800">
+                                удалена в remote
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 font-mono text-xs text-slate-300">
+                            <span class="bg-slate-950 px-2.5 py-1 rounded border border-slate-800">
+                                {{ b.last_sha[:10] }}...
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if b.last_build_number %}
+                            <a 
+                                href="{{ repo.drone_server.rstrip('/') }}/{{ repo.drone_repo }}/{{ b.last_build_number }}" 
+                                target="_blank" 
+                                class="inline-flex items-center gap-1 font-mono text-xs text-emerald-400 hover:text-emerald-300 underline"
+                            >
+                                #{{ b.last_build_number }}
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                            </a>
+                            {% else %}
+                            <span class="text-xs text-slate-500">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-xs text-slate-400">
+                            {{ b.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <button 
+                                onclick="triggerBranchBuild({{ repo.id }}, '{{ b.branch_name }}', this)" 
+                                class="inline-flex items-center gap-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded border border-slate-700 transition"
+                                title="Принудительно запустить билд для этой ветки в Drone CI"
+                            >
+                                🚀 Запустить билд
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="py-12 text-center text-slate-500 text-xs">
+            Ветки ещё не зафиксированы. Нажмите «Проверить сейчас» выше, чтобы произвести первоначальный опрос.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Repository Event Logs -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2.5">
+                <h2 class="text-base font-semibold text-white">Журнал событий репозитория</h2>
+                <span id="repoLiveDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Live поток событий (SSE)"></span>
+            </div>
+            <button 
+                id="clearRepoLogsBtn"
+                onclick="clearRepoLogs({{ repo.id }})" 
+                class="inline-flex items-center gap-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-white text-xs px-2.5 py-1 rounded border border-rose-800/60 transition {% if not logs %}hidden{% endif %}"
+            >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Очистить логи
+            </button>
+        </div>
+        <div id="repoLogsContainer" class="space-y-2 max-h-96 overflow-y-auto pr-1 {% if not logs %}hidden{% endif %}">
+            {% for log in logs %}
+            <div class="flex items-start justify-between gap-4 py-2.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs" data-id="{{ log.id }}">
+                <div class="flex items-start gap-2.5">
+                    <span class="mt-0.5 inline-block w-2 h-2 rounded-full 
+                        {{ 'bg-emerald-400' if log.level == 'success' else ('bg-rose-500' if log.level == 'error' else ('bg-amber-400' if log.level == 'warning' else 'bg-slate-500')) }}">
+                    </span>
+                    <div>
+                        {% if log.branch_name %}
+                        <span class="font-mono text-cyan-400 mr-1.5">[{{ log.branch_name }}]</span>
+                        {% endif %}
+                        {% if log.commit_sha %}
+                        <span class="font-mono text-slate-400 mr-1.5">({{ log.commit_sha[:7] }})</span>
+                        {% endif %}
+                        <span class="text-slate-300">{{ log.message }}</span>
+                    </div>
+                </div>
+                <div class="text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                    {{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p id="noRepoLogsPlaceholder" class="text-slate-500 text-xs {% if logs %}hidden{% endif %}">Записей в журнале пока нет.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function triggerBranchBuild(repoId, branchName, btn) {
+    if (!confirm(`Вы действительно хотите принудительно запустить сборку ветки '${branchName}' в Drone CI?`)) {
+        return;
+    }
+    const origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = "⏳ Запуск...";
+
+    try {
+        const resp = await fetch(`/api/repos/${repoId}/branches/${encodeURIComponent(branchName)}/trigger-build`, {
+            method: 'POST'
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            showToast(`Билд #${data.build_number} успешно запущен в Drone CI!`, "success");
+            setTimeout(() => window.location.reload(), 1500);
+        } else {
+            showToast(data.detail || "Ошибка запуска билда", "error");
+        }
+    } catch (err) {
+        showToast("Сетевая ошибка при запросе к серверу", "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origText;
+    }
+}
+
+async function deleteRepo(repoId, repoName) {
+    if (!confirm(`Вы уверены, что хотите удалить репозиторий "${repoName}"? Все состояния веток и логи будут удалены.`)) {
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/api/repos/${repoId}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            showToast("Репозиторий удалён", "success");
+            setTimeout(() => window.location.href = "/", 800);
+        } else {
+            showToast("Не удалось удалить репозиторий", "error");
+        }
+    } catch (err) {
+        showToast("Сетевая ошибка при удалении", "error");
+    }
+}
+
+async function clearRepoLogs(repoId) {
+    if (!confirm("Вы уверены, что хотите удалить все логи для этого репозитория?")) {
+        return;
+    }
+    try {
+        const resp = await fetch(`/api/logs?repo_id=${repoId}`, {
+            method: 'DELETE'
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            showToast(data.message || "Логи очищены", "success");
+            const container = document.getElementById('repoLogsContainer');
+            const placeholder = document.getElementById('noRepoLogsPlaceholder');
+            const clearBtn = document.getElementById('clearRepoLogsBtn');
+            if (container) { container.innerHTML = ''; container.classList.add('hidden'); }
+            if (placeholder) placeholder.classList.remove('hidden');
+            if (clearBtn) clearBtn.classList.add('hidden');
+        } else {
+            showToast("Не удалось очистить логи", "error");
+        }
+    } catch (err) {
+        showToast(`Ошибка: ${err.message}`, "error");
+    }
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function appendRepoLogCard(log) {
+    const container = document.getElementById('repoLogsContainer');
+    const placeholder = document.getElementById('noRepoLogsPlaceholder');
+    const clearBtn = document.getElementById('clearRepoLogsBtn');
+    if (!container) return;
+
+    if (log.id && container.querySelector(`div[data-id="${log.id}"]`)) {
+        return;
+    }
+
+    if (placeholder) placeholder.classList.add('hidden');
+    container.classList.remove('hidden');
+    if (clearBtn) clearBtn.classList.remove('hidden');
+
+    let colorDot = 'bg-slate-500';
+    if (log.level === 'success') colorDot = 'bg-emerald-400';
+    else if (log.level === 'error') colorDot = 'bg-rose-500';
+    else if (log.level === 'warning') colorDot = 'bg-amber-400';
+
+    const branchHtml = log.branch_name ? `<span class="font-mono text-cyan-400 mr-1.5">[${escapeHtml(log.branch_name)}]</span>` : '';
+    const shaHtml = log.commit_sha ? `<span class="font-mono text-slate-400 mr-1.5">(${escapeHtml(log.commit_sha.substring(0, 7))})</span>` : '';
+
+    const card = document.createElement('div');
+    card.className = 'flex items-start justify-between gap-4 py-2.5 px-3 rounded-lg bg-cyan-950/40 border border-cyan-800/60 text-xs transition-colors duration-1000';
+    if (log.id) card.setAttribute('data-id', log.id);
+
+    card.innerHTML = `
+        <div class="flex items-start gap-2.5">
+            <span class="mt-0.5 inline-block w-2 h-2 rounded-full ${colorDot}"></span>
+            <div>
+                ${branchHtml}
+                ${shaHtml}
+                <span class="text-slate-300">${escapeHtml(log.message)}</span>
+            </div>
+        </div>
+        <div class="text-slate-500 whitespace-nowrap font-mono text-[11px]">
+            ${escapeHtml(log.created_at)}
+        </div>
+    `;
+
+    container.insertBefore(card, container.firstChild);
+    setTimeout(() => {
+        card.className = 'flex items-start justify-between gap-4 py-2.5 px-3 rounded-lg bg-slate-950/70 border border-slate-800 text-xs transition-colors duration-1000';
+    }, 300);
+
+    while (container.children.length > 50) {
+        container.removeChild(container.lastChild);
+    }
+}
+
+function initRepoSSE(repoId) {
+    const stream = new EventSource(`/api/logs/stream?repo_id=${repoId}`);
+    stream.addEventListener('log', function(e) {
+        try {
+            const log = JSON.parse(e.data);
+            appendRepoLogCard(log);
+        } catch (err) {}
+    });
+    stream.addEventListener('clear', function() {
+        const container = document.getElementById('repoLogsContainer');
+        const placeholder = document.getElementById('noRepoLogsPlaceholder');
+        const clearBtn = document.getElementById('clearRepoLogsBtn');
+        if (container) { container.innerHTML = ''; container.classList.add('hidden'); }
+        if (placeholder) placeholder.classList.remove('hidden');
+        if (clearBtn) clearBtn.classList.add('hidden');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initRepoSSE({{ repo.id }});
+});
+</script>
+{% endblock %}

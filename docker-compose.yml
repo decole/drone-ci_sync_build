@@ -1,0 +1,16 @@
+services:
+  drone-build-sync:
+    build: .
+    container_name: drone-ci-build-sync
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8080
+      - DATA_DIR=/app/data
+      - DATABASE_URL=sqlite:////app/data/drone_sync.db
+      - DEFAULT_DRONE_SERVER=https://drone.uberserver.ru
+      - DEFAULT_DRONE_TOKEN=

@@ -1,0 +1,100 @@
+/* Custom styles and Tailwind 3 Slate color mappings for offline bundle */
+:root {
+    --slate-950: #020617;
+    --slate-900: #0f172a;
+    --slate-800: #1e293b;
+    --slate-700: #334155;
+    --slate-600: #475569;
+    --slate-500: #64748b;
+    --slate-400: #94a3b8;
+    --slate-300: #cbd5e1;
+    --slate-200: #e2e8f0;
+    --slate-100: #f1f5f9;
+}
+
+.bg-slate-950 { background-color: var(--slate-950); }
+.bg-slate-900 { background-color: var(--slate-900); }
+.bg-slate-800 { background-color: var(--slate-800); }
+.bg-slate-700 { background-color: var(--slate-700); }
+.border-slate-800 { border-color: var(--slate-800); }
+.border-slate-700 { border-color: var(--slate-700); }
+.text-slate-100 { color: var(--slate-100); }
+.text-slate-200 { color: var(--slate-200); }
+.text-slate-300 { color: var(--slate-300); }
+.text-slate-400 { color: var(--slate-400); }
+.text-slate-500 { color: var(--slate-500); }
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+}
+
+/* Custom Toggle Switch Component */
+.toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    pointer-events: none;
+}
+
+.toggle-track {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background-color: #334155;
+    border-radius: 9999px;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid #475569;
+    flex-shrink: 0;
+}
+
+.toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background-color: #ffffff;
+    border-radius: 9999px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toggle-switch input[type="checkbox"]:checked + .toggle-track {
+    background-color: #059669;
+    border-color: #10b981;
+}
+
+.toggle-switch input[type="checkbox"]:checked + .toggle-track .toggle-knob {
+    transform: translateX(20px);
+}
+
+.toggle-switch input[type="checkbox"]:focus-visible + .toggle-track {
+    outline: 2px solid #06b6d4;
+    outline-offset: 2px;
+}
+
+.toggle-switch:hover .toggle-track {
+    border-color: #94a3b8;
+}

@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <h1 class="text-2xl font-bold text-white tracking-tight">Настройки нотификаций</h1>
+        <p class="text-slate-400 text-sm mt-0.5">
+            Оповещения о новых коммитах, запуске сборок Drone CI и ошибках через Telegram, ВКонтакте и Email
+        </p>
+    </div>
+
+    <!-- Event Filters Form -->
+    <form id="form_events" method="POST" action="/notifications" onsubmit="event.preventDefault(); saveChannel('events');" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
+        <input type="hidden" name="channel" value="events">
+        <div class="border-b border-slate-800 pb-3">
+            <h2 class="text-base font-semibold text-white flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                События для отправки уведомлений
+            </h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="flex items-start gap-3 p-3.5 bg-slate-950/40 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                <input type="checkbox" name="notify_on_build" id="notify_on_build" class="w-4 h-4 mt-0.5 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500" {{ 'checked' if cfg.notify_on_build else '' }}>
+                <div>
+                    <div class="text-sm font-medium text-white">🚀 Запуск новой сборки Drone CI</div>
+                    <div class="text-xs text-slate-400 mt-0.5">Отправлять сообщение при обнаружении нового коммита и старте билда</div>
+                </div>
+            </label>
+
+            <label class="flex items-start gap-3 p-3.5 bg-slate-950/40 border border-slate-800 rounded-xl cursor-pointer hover:border-slate-700 transition">
+                <input type="checkbox" name="notify_on_error" id="notify_on_error" class="w-4 h-4 mt-0.5 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500" {{ 'checked' if cfg.notify_on_error else '' }}>
+                <div>
+                    <div class="text-sm font-medium text-white">⚠️ Ошибки опроса и API</div>
+                    <div class="text-xs text-slate-400 mt-0.5">Отправлять оповещение при сбоях git ls-remote или ошибках Drone API</div>
+                </div>
+            </label>
+        </div>
+        <div class="flex justify-end pt-3 border-t border-slate-800/80">
+            <button type="submit" id="btn_save_events" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg shadow transition hover:shadow-emerald-500/20">
+                💾 Сохранить события
+            </button>
+        </div>
+    </form>
+
+    <!-- 1. Telegram Channel Form -->
+    <form id="form_telegram" method="POST" action="/notifications" onsubmit="event.preventDefault(); saveChannel('telegram');" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+        <input type="hidden" name="channel" value="telegram">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">✈️</span>
+                <div>
+                    <h2 class="text-base font-semibold text-white">Telegram</h2>
+                    <p class="text-xs text-slate-400">Уведомления в личный чат или группу через Telegram Bot API</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="toggle-switch inline-flex items-center gap-2.5 cursor-pointer select-none" title="Включить / отключить Telegram">
+                    <input type="checkbox" name="telegram_enabled" id="tg_enabled" {{ 'checked' if cfg.telegram_enabled else '' }} onchange="updateToggleStatus(this, 'tg_status_label')">
+                    <span class="toggle-track">
+                        <span class="toggle-knob"></span>
+                    </span>
+                    <span id="tg_status_label" class="text-xs font-semibold {{ 'text-emerald-400' if cfg.telegram_enabled else 'text-slate-400' }} transition-colors">
+                        {{ 'Включено' if cfg.telegram_enabled else 'Отключено' }}
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">
+                    Telegram Bot Token
+                    <span id="tg_token_saved" class="{{ 'inline' if cfg.telegram_bot_token else 'hidden' }} text-emerald-400 font-normal text-[10px] ml-1">(сохранён)</span>
+                </label>
+                <input type="password" name="telegram_bot_token" id="tg_token"
+                       placeholder="{{ 'Оставьте пустым, чтобы не изменять' if cfg.telegram_bot_token else '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ' }}"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500">
+            </div>
+
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Chat ID (ID чата, пользователя или канала)</label>
+                <input type="text" name="telegram_chat_id" id="tg_chat_id"
+                       value="{{ cfg.telegram_chat_id or '' }}"
+                       placeholder="например: 123456789 или -1001234567890"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500">
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800/80">
+            <button type="button" onclick="testChannel('telegram')" id="btn_test_telegram" class="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-medium px-4 py-2 rounded-lg border border-slate-700 transition">
+                🧪 Проверить Telegram
+            </button>
+            <button type="submit" id="btn_save_telegram" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg shadow transition hover:shadow-emerald-500/20">
+                💾 Сохранить Telegram
+            </button>
+        </div>
+    </form>
+
+    <!-- 2. VK Channel Form -->
+    <form id="form_vk" method="POST" action="/notifications" onsubmit="event.preventDefault(); saveChannel('vk');" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+        <input type="hidden" name="channel" value="vk">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">💬</span>
+                <div>
+                    <h2 class="text-base font-semibold text-white">ВКонтакте (Группа)</h2>
+                    <p class="text-xs text-slate-400">Уведомления в диалог с сообществом или беседу через VK messages.send API</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="toggle-switch inline-flex items-center gap-2.5 cursor-pointer select-none" title="Включить / отключить ВКонтакте">
+                    <input type="checkbox" name="vk_enabled" id="vk_enabled" {{ 'checked' if cfg.vk_enabled else '' }} onchange="updateToggleStatus(this, 'vk_status_label')">
+                    <span class="toggle-track">
+                        <span class="toggle-knob"></span>
+                    </span>
+                    <span id="vk_status_label" class="text-xs font-semibold {{ 'text-emerald-400' if cfg.vk_enabled else 'text-slate-400' }} transition-colors">
+                        {{ 'Включено' if cfg.vk_enabled else 'Отключено' }}
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">
+                    Токен доступа группы (VK Community Token)
+                    <span id="vk_token_saved" class="{{ 'inline' if cfg.vk_group_token else 'hidden' }} text-emerald-400 font-normal text-[10px] ml-1">(сохранён)</span>
+                </label>
+                <input type="password" name="vk_group_token" id="vk_token"
+                       placeholder="{{ 'Оставьте пустым, чтобы не изменять' if cfg.vk_group_token else 'vk1.a.xxxxxxxxxxxxxxxxxxxx' }}"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500">
+            </div>
+
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Peer ID (ID пользователя или беседы)</label>
+                <input type="text" name="vk_peer_id" id="vk_peer_id"
+                       value="{{ cfg.vk_peer_id or '' }}"
+                       placeholder="например: 12345678 или 2000000001 (для бесед)"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500">
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800/80">
+            <button type="button" onclick="testChannel('vk')" id="btn_test_vk" class="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-blue-300 text-xs font-medium px-4 py-2 rounded-lg border border-slate-700 transition">
+                🧪 Проверить ВКонтакте
+            </button>
+            <button type="submit" id="btn_save_vk" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg shadow transition hover:shadow-emerald-500/20">
+                💾 Сохранить ВКонтакте
+            </button>
+        </div>
+    </form>
+
+    <!-- 3. Email (SMTP) Channel Form -->
+    <form id="form_email" method="POST" action="/notifications" onsubmit="event.preventDefault(); saveChannel('email');" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+        <input type="hidden" name="channel" value="email">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">✉️</span>
+                <div>
+                    <h2 class="text-base font-semibold text-white">Email (SMTP)</h2>
+                    <p class="text-xs text-slate-400">Почтовые рассылки через корпоративный или внешний SMTP сервер</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="toggle-switch inline-flex items-center gap-2.5 cursor-pointer select-none" title="Включить / отключить Email">
+                    <input type="checkbox" name="email_enabled" id="email_enabled" {{ 'checked' if cfg.email_enabled else '' }} onchange="updateToggleStatus(this, 'email_status_label')">
+                    <span class="toggle-track">
+                        <span class="toggle-knob"></span>
+                    </span>
+                    <span id="email_status_label" class="text-xs font-semibold {{ 'text-emerald-400' if cfg.email_enabled else 'text-slate-400' }} transition-colors">
+                        {{ 'Включено' if cfg.email_enabled else 'Отключено' }}
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="md:col-span-2 space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">SMTP Host / Сервер</label>
+                <input type="text" name="smtp_host" id="smtp_host"
+                       value="{{ cfg.smtp_host or '' }}"
+                       placeholder="smtp.example.com или mail.company.local"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500">
+            </div>
+
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Порт</label>
+                <input type="number" name="smtp_port" id="smtp_port"
+                       value="{{ cfg.smtp_port or 587 }}"
+                       placeholder="587 или 465"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Username / Логин SMTP</label>
+                <input type="text" name="smtp_username" id="smtp_username"
+                       value="{{ cfg.smtp_username or '' }}"
+                       placeholder="drone-sync@example.com"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500">
+            </div>
+
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">
+                    Пароль SMTP
+                    <span id="smtp_pass_saved" class="{{ 'inline' if cfg.smtp_password else 'hidden' }} text-emerald-400 font-normal text-[10px] ml-1">(сохранён)</span>
+                </label>
+                <input type="password" name="smtp_password" id="smtp_password"
+                       placeholder="{{ 'Оставьте пустым, чтобы не изменять' if cfg.smtp_password else 'Секретный пароль ящика' }}"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 font-mono text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500">
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <input type="checkbox" name="smtp_use_tls" id="smtp_use_tls"
+                   class="w-4 h-4 rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-amber-500"
+                   {{ 'checked' if cfg.smtp_use_tls else '' }}>
+            <label for="smtp_use_tls" class="text-xs text-slate-300 cursor-pointer select-none">
+                Использовать STARTTLS шифрование (рекомендуется для портов 587/25)
+            </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Email отправителя (From)</label>
+                <input type="email" name="smtp_from" id="smtp_from"
+                       value="{{ cfg.smtp_from or '' }}"
+                       placeholder="drone-ci-sync@example.com"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500">
+            </div>
+
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">Email получателей (To, через запятую)</label>
+                <input type="text" name="smtp_to" id="smtp_to"
+                       value="{{ cfg.smtp_to or '' }}"
+                       placeholder="devops@company.ru, lead@company.ru"
+                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500">
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800/80">
+            <button type="button" onclick="testChannel('email')" id="btn_test_email" class="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-medium px-4 py-2 rounded-lg border border-slate-700 transition">
+                🧪 Проверить Email
+            </button>
+            <button type="submit" id="btn_save_email" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg shadow transition hover:shadow-emerald-500/20">
+                💾 Сохранить Email
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateToggleStatus(checkbox, labelId) {
+    const label = document.getElementById(labelId);
+    if (!label) return;
+    if (checkbox.checked) {
+        label.textContent = 'Включено';
+        label.className = 'text-xs font-semibold text-emerald-400 transition-colors';
+    } else {
+        label.textContent = 'Отключено';
+        label.className = 'text-xs font-semibold text-slate-400 transition-colors';
+    }
+}
+
+async function saveChannel(channel) {
+    const btn = document.getElementById(`btn_save_${channel}`);
+    const originalContent = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin">⏳</span> Сохранение...`;
+    }
+
+    let payload = { channel: channel };
+
+    if (channel === 'events') {
+        payload.notify_on_build = document.getElementById('notify_on_build').checked;
+        payload.notify_on_error = document.getElementById('notify_on_error').checked;
+    } else if (channel === 'telegram') {
+        payload.telegram_enabled = document.getElementById('tg_enabled').checked;
+        payload.telegram_bot_token = document.getElementById('tg_token').value.trim() || null;
+        payload.telegram_chat_id = document.getElementById('tg_chat_id').value.trim() || null;
+    } else if (channel === 'vk') {
+        payload.vk_enabled = document.getElementById('vk_enabled').checked;
+        payload.vk_group_token = document.getElementById('vk_token').value.trim() || null;
+        payload.vk_peer_id = document.getElementById('vk_peer_id').value.trim() || null;
+    } else if (channel === 'email') {
+        payload.email_enabled = document.getElementById('email_enabled').checked;
+        payload.smtp_host = document.getElementById('smtp_host').value.trim() || null;
+        payload.smtp_port = parseInt(document.getElementById('smtp_port').value) || 587;
+        payload.smtp_username = document.getElementById('smtp_username').value.trim() || null;
+        payload.smtp_password = document.getElementById('smtp_password').value.trim() || null;
+        payload.smtp_use_tls = document.getElementById('smtp_use_tls').checked;
+        payload.smtp_from = document.getElementById('smtp_from').value.trim() || null;
+        payload.smtp_to = document.getElementById('smtp_to').value.trim() || null;
+    }
+
+    try {
+        const res = await fetch('/api/notifications/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast(data.message, 'success');
+            // If tokens were entered, clear input & show (сохранён)
+            if (channel === 'telegram' && payload.telegram_bot_token) {
+                document.getElementById('tg_token').value = '';
+                document.getElementById('tg_token').placeholder = 'Оставьте пустым, чтобы не изменять';
+                const badge = document.getElementById('tg_token_saved');
+                if (badge) badge.classList.remove('hidden');
+            } else if (channel === 'vk' && payload.vk_group_token) {
+                document.getElementById('vk_token').value = '';
+                document.getElementById('vk_token').placeholder = 'Оставьте пустым, чтобы не изменять';
+                const badge = document.getElementById('vk_token_saved');
+                if (badge) badge.classList.remove('hidden');
+            } else if (channel === 'email' && payload.smtp_password) {
+                document.getElementById('smtp_password').value = '';
+                document.getElementById('smtp_password').placeholder = 'Оставьте пустым, чтобы не изменять';
+                const badge = document.getElementById('smtp_pass_saved');
+                if (badge) badge.classList.remove('hidden');
+            }
+        } else {
+            showToast(data.message || 'Ошибка сохранения', 'error');
+        }
+    } catch (err) {
+        showToast(`Ошибка запроса: ${err.message}`, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    }
+}
+
+async function testChannel(channel) {
+    const btn = document.getElementById(`btn_test_${channel}`);
+    const originalContent = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin">⏳</span> Проверка...`;
+    }
+
+    showToast(`Отправка тестового сообщения в ${channel}...`, 'info');
+
+    let payload = { channel: channel };
+
+    if (channel === 'telegram') {
+        payload.telegram_bot_token = document.getElementById('tg_token').value.trim() || null;
+        payload.telegram_chat_id = document.getElementById('tg_chat_id').value.trim() || null;
+    } else if (channel === 'vk') {
+        payload.vk_group_token = document.getElementById('vk_token').value.trim() || null;
+        payload.vk_peer_id = document.getElementById('vk_peer_id').value.trim() || null;
+    } else if (channel === 'email') {
+        payload.smtp_host = document.getElementById('smtp_host').value.trim() || null;
+        payload.smtp_port = parseInt(document.getElementById('smtp_port').value) || 587;
+        payload.smtp_username = document.getElementById('smtp_username').value.trim() || null;
+        payload.smtp_password = document.getElementById('smtp_password').value.trim() || null;
+        payload.smtp_use_tls = document.getElementById('smtp_use_tls').checked;
+        payload.smtp_from = document.getElementById('smtp_from').value.trim() || null;
+        payload.smtp_to = document.getElementById('smtp_to').value.trim() || null;
+    }
+
+    try {
+        const res = await fetch('/api/notifications/test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast(data.message, 'success');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (err) {
+        showToast(`Ошибка запроса: ${err.message}`, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    }
+}
+
+// Check for ?saved= in query string
+const params = new URLSearchParams(window.location.search);
+if (params.has('saved')) {
+    const s = params.get('saved');
+    if (s === 'telegram') showToast('Настройки Telegram успешно сохранены', 'success');
+    else if (s === 'vk') showToast('Настройки ВКонтакте успешно сохранены', 'success');
+    else if (s === 'email') showToast('Настройки Email успешно сохранены', 'success');
+    else if (s === 'events') showToast('Настройки событий успешно сохранены', 'success');
+    else showToast('Настройки нотификаций успешно сохранены', 'success');
+}
+</script>
+{% endblock %}

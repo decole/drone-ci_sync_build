@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header & Filters -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+        <div>
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl font-bold text-white tracking-tight">Журнал событий</h1>
+                <!-- Live SSE Indicator -->
+                <div class="flex items-center gap-2">
+                    <span id="liveBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 shadow-sm" title="Поток событий в реальном времени">
+                        <span id="liveDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span id="liveText">Live (SSE)</span>
+                    </span>
+                    <button 
+                        id="liveToggleBtn" 
+                        onclick="toggleLiveUpdates()" 
+                        type="button"
+                        class="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded border border-slate-800 hover:border-slate-700 bg-slate-950/60 transition"
+                        title="Приостановить или возобновить автообновление таблицы"
+                    >
+                        Пауза
+                    </button>
+                </div>
+            </div>
+            <p class="text-slate-400 text-sm mt-0.5">История опросов, обнаруженных коммитов и вызовов Drone CI API в реальном времени</p>
+        </div>
+
+        <!-- Filter Form & Actions -->
+        <div class="flex flex-wrap items-center gap-3">
+            <form method="GET" action="/logs" class="flex flex-wrap items-center gap-3">
+                <select 
+                    name="repo_id" 
+                    id="filterRepoId"
+                    onchange="this.form.submit()" 
+                    class="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg px-3 py-2 focus:ring-1 focus:ring-cyan-500"
+                >
+                    <option value="">Все репозитории</option>
+                    {% for r in repos %}
+                    <option value="{{ r.id }}" {{ 'selected' if selected_repo_id == r.id else '' }}>{{ r.name }}</option>
+                    {% endfor %}
+                </select>
+
+                <select 
+                    name="level" 
+                    id="filterLevel"
+                    onchange="this.form.submit()" 
+                    class="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg px-3 py-2 focus:ring-1 focus:ring-cyan-500"
+                >
+                    <option value="">Все уровни</option>
+                    <option value="success" {{ 'selected' if selected_level == 'success' else '' }}>Только Успешные (Сборки)</option>
+                    <option value="error" {{ 'selected' if selected_level == 'error' else '' }}>Только Ошибки</option>
+                    <option value="warning" {{ 'selected' if selected_level == 'warning' else '' }}>Внимание</option>
+                    <option value="info" {{ 'selected' if selected_level == 'info' else '' }}>Инфо / Инициализации</option>
+                </select>
+
+                {% if selected_repo_id or selected_level %}
+                <a href="/logs" class="text-xs text-slate-400 hover:text-white px-2 py-1">Сбросить</a>
+                {% endif %}
+            </form>
+
+            <button 
+                id="clearLogsBtn"
+                onclick="clearLogs('{{ selected_repo_id or '' }}')"
+                class="inline-flex items-center gap-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 hover:text-white text-xs font-semibold px-3 py-2 rounded-lg border border-rose-800/80 transition {% if not logs %}hidden{% endif %}"
+            >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Очистить журнал
+            </button>
+        </div>
+    </div>
+
+    <!-- Logs Table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+        <div id="tableContainer" class="overflow-x-auto {% if not logs %}hidden{% endif %}">
+            <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-800/60 text-xs uppercase font-medium text-slate-400 border-b border-slate-800">
+                    <tr>
+                        <th class="px-5 py-3.5">Время</th>
+                        <th class="px-5 py-3.5">Статус</th>
+                        <th class="px-5 py-3.5">Репозиторий</th>
+                        <th class="px-5 py-3.5">Ветка</th>
+                        <th class="px-5 py-3.5">SHA</th>
+                        <th class="px-5 py-3.5">Билд</th>
+                        <th class="px-5 py-3.5">Сообщение</th>
+                    </tr>
+                </thead>
+                <tbody id="logsTableBody" class="divide-y divide-slate-800/60 text-xs font-mono">
+                    {% for l in logs %}
+                    <tr class="hover:bg-slate-800/30 transition-colors" data-id="{{ l.id }}">
+                        <td class="px-5 py-3 text-slate-400 whitespace-nowrap">
+                            {{ l.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        </td>
+                        <td class="px-5 py-3">
+                            {% if l.level == 'success' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                    СБОРКА
+                                </span>
+                            {% elif l.level == 'error' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-rose-950 text-rose-300 border border-rose-800">
+                                    ОШИБКА
+                                </span>
+                            {% elif l.level == 'warning' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-amber-950 text-amber-300 border border-amber-800">
+                                    ВНИМАНИЕ
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                                    ИНФО
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-3 font-sans font-medium text-slate-200">
+                            {% if l.repo_id %}
+                            <a href="/repos/{{ l.repo_id }}" class="hover:text-cyan-400 transition">{{ l.repo_name }}</a>
+                            {% else %}
+                            {{ l.repo_name }}
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-3 text-cyan-400">
+                            {{ l.branch_name or '—' }}
+                        </td>
+                        <td class="px-5 py-3 text-slate-400">
+                            {% if l.commit_sha %}
+                            <span class="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                                {{ l.commit_sha[:7] }}
+                            </span>
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-3">
+                            {% if l.build_number %}
+                            <span class="text-emerald-400 font-semibold">#{{ l.build_number }}</span>
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-3 font-sans text-slate-300 max-w-md break-words">
+                            {{ l.message }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="noLogsPlaceholder" class="py-12 text-center text-slate-500 text-xs {% if logs %}hidden{% endif %}">
+            Записей в журнале по выбранному фильтру не найдено.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let evtSource = null;
+let isLiveActive = true;
+const maxRows = 200;
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function updateBadgeStatus(status) {
+    const badge = document.getElementById('liveBadge');
+    const dot = document.getElementById('liveDot');
+    const text = document.getElementById('liveText');
+    const btn = document.getElementById('liveToggleBtn');
+    if (!badge || !dot || !text) return;
+
+    if (status === 'live') {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 shadow-sm';
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        text.textContent = 'Live (SSE)';
+        if (btn) btn.textContent = 'Пауза';
+    } else if (status === 'reconnecting') {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-950/80 text-amber-400 border border-amber-800/80 shadow-sm';
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+        text.textContent = 'Подключение...';
+    } else if (status === 'paused') {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-900 text-slate-400 border border-slate-800 shadow-sm';
+        dot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        text.textContent = 'На паузе';
+        if (btn) btn.textContent = 'Возобновить';
+    }
+}
+
+function toggleLiveUpdates() {
+    isLiveActive = !isLiveActive;
+    if (isLiveActive) {
+        initSSE();
+    } else {
+        if (evtSource) {
+            evtSource.close();
+            evtSource = null;
+        }
+        updateBadgeStatus('paused');
+    }
+}
+
+function initSSE() {
+    if (evtSource) {
+        evtSource.close();
+        evtSource = null;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryString = urlParams.toString();
+    const streamUrl = '/api/logs/stream' + (queryString ? '?' + queryString : '');
+
+    updateBadgeStatus('reconnecting');
+    evtSource = new EventSource(streamUrl);
+
+    evtSource.onopen = function() {
+        if (isLiveActive) {
+            updateBadgeStatus('live');
+        }
+    };
+
+    evtSource.addEventListener('log', function(e) {
+        if (!isLiveActive) return;
+        try {
+            const log = JSON.parse(e.data);
+            appendLogRow(log);
+        } catch (err) {
+            console.error('Failed to parse SSE log data:', err);
+        }
+    });
+
+    evtSource.addEventListener('clear', function(e) {
+        clearTableUI();
+    });
+
+    evtSource.onerror = function() {
+        if (isLiveActive) {
+            updateBadgeStatus('reconnecting');
+        }
+    };
+}
+
+function appendLogRow(log) {
+    const tbody = document.getElementById('logsTableBody');
+    const tableContainer = document.getElementById('tableContainer');
+    const placeholder = document.getElementById('noLogsPlaceholder');
+    const clearBtn = document.getElementById('clearLogsBtn');
+
+    if (!tbody) return;
+
+    if (log.id && tbody.querySelector(`tr[data-id="${log.id}"]`)) {
+        return;
+    }
+
+    if (placeholder) placeholder.classList.add('hidden');
+    if (tableContainer) tableContainer.classList.remove('hidden');
+    if (clearBtn) clearBtn.classList.remove('hidden');
+
+    let badgeHtml = '';
+    if (log.level === 'success') {
+        badgeHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800">СБОРКА</span>';
+    } else if (log.level === 'error') {
+        badgeHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-rose-950 text-rose-300 border border-rose-800">ОШИБКА</span>';
+    } else if (log.level === 'warning') {
+        badgeHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-amber-950 text-amber-300 border border-amber-800">ВНИМАНИЕ</span>';
+    } else {
+        badgeHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-slate-800 text-slate-400 border border-slate-700">ИНФО</span>';
+    }
+
+    const repoHtml = log.repo_id
+        ? `<a href="/repos/${escapeHtml(log.repo_id)}" class="hover:text-cyan-400 transition">${escapeHtml(log.repo_name)}</a>`
+        : escapeHtml(log.repo_name);
+
+    const branchHtml = escapeHtml(log.branch_name || '—');
+
+    const shaHtml = log.commit_sha
+        ? `<span class="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">${escapeHtml(log.commit_sha.substring(0, 7))}</span>`
+        : '—';
+
+    const buildHtml = log.build_number
+        ? `<span class="text-emerald-400 font-semibold">#${escapeHtml(String(log.build_number))}</span>`
+        : '—';
+
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-800/30 transition-colors bg-cyan-950/40';
+    tr.style.transition = 'background-color 1.5s ease-out';
+    if (log.id) tr.setAttribute('data-id', log.id);
+
+    tr.innerHTML = `
+        <td class="px-5 py-3 text-slate-400 whitespace-nowrap">${escapeHtml(log.created_at)}</td>
+        <td class="px-5 py-3">${badgeHtml}</td>
+        <td class="px-5 py-3 font-sans font-medium text-slate-200">${repoHtml}</td>
+        <td class="px-5 py-3 text-cyan-400">${branchHtml}</td>
+        <td class="px-5 py-3 text-slate-400">${shaHtml}</td>
+        <td class="px-5 py-3">${buildHtml}</td>
+        <td class="px-5 py-3 font-sans text-slate-300 max-w-md break-words">${escapeHtml(log.message)}</td>
+    `;
+
+    tbody.insertBefore(tr, tbody.firstChild);
+
+    setTimeout(() => {
+        tr.classList.remove('bg-cyan-950/40');
+    }, 200);
+
+    while (tbody.children.length > maxRows) {
+        tbody.removeChild(tbody.lastChild);
+    }
+}
+
+function clearTableUI() {
+    const tbody = document.getElementById('logsTableBody');
+    const tableContainer = document.getElementById('tableContainer');
+    const placeholder = document.getElementById('noLogsPlaceholder');
+    const clearBtn = document.getElementById('clearLogsBtn');
+
+    if (tbody) tbody.innerHTML = '';
+    if (tableContainer) tableContainer.classList.add('hidden');
+    if (placeholder) placeholder.classList.remove('hidden');
+    if (clearBtn) clearBtn.classList.add('hidden');
+}
+
+async function clearLogs(repoId) {
+    const promptMsg = repoId 
+        ? "Вы уверены, что хотите удалить все записи журнала для выбранного репозитория?" 
+        : "Вы уверены, что хотите полностью очистить весь журнал событий?";
+
+    if (!confirm(promptMsg)) {
+        return;
+    }
+
+    try {
+        const url = repoId ? `/api/logs?repo_id=${repoId}` : '/api/logs';
+        const res = await fetch(url, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+            clearTableUI();
+            showToast(data.message, 'success');
+        } else {
+            showToast('Не удалось очистить журнал', 'error');
+        }
+    } catch (e) {
+        showToast(`Ошибка: ${e.message}`, 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initSSE();
+});
+</script>
+{% endblock %}
