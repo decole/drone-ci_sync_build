@@ -142,6 +142,7 @@ drone-ci-build-sync/
 ├── README_EN.md            # Документация на английском языке
 ├── Dockerfile
 ├── docker-compose.yml
+├── Makefile
 ├── requirements.txt
 ├── main.py                 # Точка входа в приложение
 └── README.md
@@ -160,6 +161,8 @@ cd drone-ci-build-sync
 
 # 2. Запуск в фоновом режиме
 docker compose up -d --build
+# либо через Makefile:
+# make rebuild
 ```
 
 Интерфейс будет доступен по адресу:

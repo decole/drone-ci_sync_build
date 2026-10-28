@@ -129,6 +129,7 @@ drone-ci-build-sync/
 ├── CONTRIBUTING.md         # Developer guide, code style & PR conventions
 ├── Dockerfile
 ├── docker-compose.yml
+├── Makefile
 ├── requirements.txt
 ├── main.py                 # Application entrypoint
 └── README.md               # Russian documentation
@@ -149,6 +150,8 @@ drone-ci-build-sync/
 2. Start the container:
    ```bash
    docker compose up -d --build
+   # or using Makefile:
+   # make rebuild
    ```
 
 3. Open the web interface:
